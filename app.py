@@ -141,6 +141,50 @@ def list_textures(data: bytes) -> list[dict]:
     return out
 
 
+
+def extract_texture_png(data: bytes, path_id: int | None = None, name: str | None = None) -> tuple[bytes, str, int, int]:
+    """
+    Extract one Texture2D as PNG bytes.
+    Match by path_id (preferred) or m_Name (case-insensitive).
+    Returns (png_bytes, name, width, height).
+    """
+    env = _load_env(data)
+    objects = list(env.objects) if env.objects is not None else []
+    target_name = (name or "").lower()
+
+    for obj in objects:
+        if _type_name(obj) != "Texture2D":
+            continue
+        if path_id is not None and getattr(obj, "path_id", None) != path_id:
+            continue
+
+        # name filter if no path_id
+        if path_id is None and target_name:
+            info = _read_texture_info(obj)
+            if not info or str(info["name"]).lower() != target_name:
+                continue
+
+        try:
+            tex = obj.read()
+        except Exception as e:
+            raise RuntimeError(f"Could not read Texture2D: {e}") from e
+
+        tex_name = getattr(tex, "m_Name", None) or getattr(tex, "name", None) or f"pathid_{obj.path_id}"
+        w = int(getattr(tex, "m_Width", 0) or 0)
+        h = int(getattr(tex, "m_Height", 0) or 0)
+
+        try:
+            img = tex.image
+        except Exception as e:
+            raise RuntimeError(f"Could not decode texture image: {e}") from e
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue(), str(tex_name), w, h
+
+    raise ValueError("Texture not found in bundle")
+
+
 def replace_textures(bundle_bytes: bytes, replacements: dict[str, bytes]) -> bytes:
     """
     replacements: { m_Name_lower: png_bytes }
@@ -324,11 +368,67 @@ async def api_replace(request: web.Request) -> web.Response:
     )
 
 
+
+async def api_extract(request: web.Request) -> web.Response:
+    """
+    POST multipart:
+      - bundle: asset bundle
+      - path_id: optional int
+      - name: optional texture m_Name
+    Returns PNG image.
+    """
+    reader = await request.multipart()
+    bundle_bytes = None
+    path_id = None
+    name = None
+
+    while True:
+        part = await reader.next()
+        if part is None:
+            break
+        if part.name == "bundle":
+            bundle_bytes = await part.read(decode=False)
+        elif part.name == "path_id":
+            raw = (await part.read(decode=False)).decode("utf-8", errors="ignore").strip()
+            if raw:
+                path_id = int(raw)
+        elif part.name == "name":
+            name = (await part.read(decode=False)).decode("utf-8", errors="ignore").strip() or None
+
+    if not bundle_bytes:
+        return web.json_response({"error": "No bundle uploaded"}, status=400)
+    if path_id is None and not name:
+        return web.json_response({"error": "Provide path_id or name"}, status=400)
+
+    size_mb = len(bundle_bytes) / (1024 * 1024)
+    if size_mb > MAX_BUNDLE_MB:
+        return web.json_response({"error": f"Bundle too large ({size_mb:.1f} MB)"}, status=400)
+
+    try:
+        png, tex_name, w, h = extract_texture_png(bundle_bytes, path_id=path_id, name=name)
+    except Exception as e:
+        logger.exception("Extract failed")
+        return web.json_response({"error": str(e)}, status=400)
+
+    safe = sanitize(tex_name) + ".png"
+    return web.Response(
+        body=png,
+        headers={
+            "Content-Type": "image/png",
+            "Content-Disposition": f'inline; filename="{safe}"',
+            "X-Texture-Name": tex_name,
+            "X-Texture-Width": str(w),
+            "X-Texture-Height": str(h),
+        },
+    )
+
+
 def create_app() -> web.Application:
     app = web.Application(client_max_size=MAX_BUNDLE_MB * 1024 * 1024 + 20 * 1024 * 1024)
     app.router.add_get("/", index)
     app.router.add_get("/health", health)
     app.router.add_post("/api/list", api_list)
+    app.router.add_post("/api/extract", api_extract)
     app.router.add_post("/api/replace", api_replace)
     return app
 
