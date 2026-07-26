@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Unity Texture Replacer</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #1a1d24;
+    --border: #2a2f3a;
+    --text: #e8eaed;
+    --muted: #9aa0a6;
+    --accent: #7c9cff;
+    --accent2: #5eead4;
+    --danger: #f87171;
+    --ok: #4ade80;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+  header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 1.15rem; font-weight: 600; }
+  header .badge {
+    font-size: 0.7rem;
+    background: #243044;
+    color: var(--accent);
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+  }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    display: grid;
+    gap: 1.25rem;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.2rem;
+  }
+  .card h2 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 0.85rem;
+  }
+  .drop {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 1.4rem 1rem;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop:hover, .drop.drag {
+    border-color: var(--accent);
+    background: rgba(124, 156, 255, 0.06);
+  }
+  .drop strong { color: var(--text); display: block; margin-bottom: 0.2rem; }
+  .drop input { display: none; }
+  .file-name {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--accent2);
+    word-break: break-all;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+  }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+  .preview-wrap { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
+  .preview {
+    width: 140px; height: 140px;
+    background: #0a0c10;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden; flex-shrink: 0;
+  }
+  .preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .preview.empty { color: var(--muted); font-size: 0.8rem; }
+  .info { flex: 1; min-width: 160px; font-size: 0.9rem; }
+  .info dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.3rem 0.8rem;
+  }
+  .info dt { color: var(--muted); }
+  .info dd { font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 1rem; }
+  button {
+    appearance: none; border: none; border-radius: 8px;
+    padding: 0.55rem 1rem; font-size: 0.9rem; font-weight: 560;
+    cursor: pointer; transition: opacity 0.15s, transform 0.1s;
+  }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-primary {
+    background: linear-gradient(135deg, #6b8cff, #5b6ef5);
+    color: #fff;
+  }
+  .btn-ok {
+    background: linear-gradient(135deg, #34d399, #10b981);
+    color: #052e1a;
+  }
+  .btn-secondary {
+    background: #2a3140;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-danger {
+    background: #3a1f24;
+    color: var(--danger);
+    border: 1px solid #5a2a32;
+  }
+  .list {
+    max-height: 260px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .list table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .list th, .list td {
+    padding: 0.45rem 0.65rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .list th {
+    position: sticky; top: 0;
+    background: #22262f;
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+  }
+  .list td.name { font-family: ui-monospace, monospace; }
+  .log {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.78rem;
+    background: #0a0c10;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem;
+    max-height: 150px;
+    overflow: auto;
+    white-space: pre-wrap;
+    color: #a8b0bd;
+  }
+  .log .ok { color: var(--ok); }
+  .log .err { color: var(--danger); }
+  .log .info { color: var(--accent); }
+  .status {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-top: 0.5rem;
+  }
+  footer {
+    text-align: center;
+    padding: 1.5rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Unity Texture Replacer</h1>
+  <span class="badge">Render · Python · UnityPy</span>
+</header>
+
+<main>
+  <div class="grid-2">
+    <section class="card">
+      <h2>1 · Asset Bundle (.bundle)</h2>
+      <div class="drop" id="dropBundle">
+        <strong>Drop .bundle here</strong>
+        or click to choose
+        <input type="file" id="bundleInput" accept=".bundle,.unity3d,.assets,*/*" />
+        <div class="file-name" id="bundleName"></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-secondary" id="btnList" disabled>List textures</button>
+      </div>
+      <div class="status" id="bundleStatus"></div>
+    </section>
+
+    <section class="card">
+      <h2>2 · Replacement PNG(s)</h2>
+      <div class="drop" id="dropPng">
+        <strong>Drop PNG here</strong>
+        filename = texture m_Name
+        <input type="file" id="pngInput" accept="image/png,image/*" multiple />
+        <div class="file-name" id="pngName"></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Texture image · Texture info</h2>
+    <div class="preview-wrap">
+      <div class="preview empty" id="preview">No image</div>
+      <div class="info">
+        <dl>
+          <dt>Name</dt><dd id="iName">—</dd>
+          <dt>Size</dt><dd id="iSize">—</dd>
+          <dt>Type</dt><dd id="iType">—</dd>
+          <dt>Bytes</dt><dd id="iBytes">—</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Textures in bundle</h2>
+    <div class="list">
+      <table>
+        <thead>
+          <tr><th>m_Name</th><th>Resolution</th><th>path_id</th></tr>
+        </thead>
+        <tbody id="texBody">
+          <tr><td colspan="3" style="color:var(--muted);text-align:center">Load a bundle and click List textures</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Replacement queue</h2>
+    <div class="list">
+      <table>
+        <thead>
+          <tr><th>m_Name</th><th>Resolution</th><th>File</th><th></th></tr>
+        </thead>
+        <tbody id="queueBody">
+          <tr><td colspan="4" style="color:var(--muted);text-align:center">Add PNGs — name must match a texture</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn-ok" id="btnBuild" disabled>Build &amp; download .bundle</button>
+      <button type="button" class="btn-danger" id="btnReset">Reset</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Log</h2>
+    <div class="log" id="log">Ready. Upload a .bundle and PNG replacements.</div>
+  </section>
+</main>
+
+<footer>Unity Texture Replacer · Python + UnityPy on Render · no Telegram</footer>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const logEl = $("log");
+
+  let bundleFile = null;
+  const queue = []; // { name, w, h, file }
+
+  function log(msg, cls = "") {
+    const d = document.createElement("div");
+    if (cls) d.className = cls;
+    d.textContent = msg;
+    logEl.appendChild(d);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setupDrop(zoneId, inputId, onFiles) {
+    const zone = $(zoneId);
+    const input = $(inputId);
+    zone.addEventListener("click", () => input.click());
+    zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("drag"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      zone.classList.remove("drag");
+      if (e.dataTransfer.files?.length) onFiles([...e.dataTransfer.files]);
+    });
+    input.addEventListener("change", () => {
+      if (input.files?.length) onFiles([...input.files]);
+    });
+  }
+
+  function showPreview(file) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const prev = $("preview");
+      prev.classList.remove("empty");
+      prev.innerHTML = "";
+      const el = document.createElement("img");
+      el.src = url;
+      prev.appendChild(el);
+      $("iName").textContent = file.name.replace(/\.[^.]+$/, "");
+      $("iSize").textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+      $("iType").textContent = file.type || "image";
+      $("iBytes").textContent = `${(file.size / 1024).toFixed(1)} KB`;
+    };
+    img.src = url;
+  }
+
+  function renderQueue() {
+    const body = $("queueBody");
+    if (!queue.length) {
+      body.innerHTML = `<tr><td colspan="4" style="color:var(--muted);text-align:center">Add PNGs — name must match a texture</td></tr>`;
+      $("btnBuild").disabled = !bundleFile;
+      return;
+    }
+    body.innerHTML = queue.map((t, i) => `
+      <tr>
+        <td class="name">${esc(t.name)}</td>
+        <td>${t.w}×${t.h}</td>
+        <td>${esc(t.file.name)}</td>
+        <td><button type="button" class="btn-secondary" data-rm="${i}" style="padding:0.2rem 0.5rem;font-size:0.75rem">Remove</button></td>
+      </tr>`).join("");
+    $("btnBuild").disabled = !bundleFile;
+    body.querySelectorAll("[data-rm]").forEach((btn) => {
+      btn.onclick = () => {
+        queue.splice(+btn.dataset.rm, 1);
+        renderQueue();
+      };
+    });
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  setupDrop("dropBundle", "bundleInput", (files) => {
+    bundleFile = files[0];
+    $("bundleName").textContent = `${bundleFile.name} (${(bundleFile.size / 1024 / 1024).toFixed(2)} MB)`;
+    $("btnList").disabled = false;
+    $("btnBuild").disabled = !queue.length;
+    log(`Bundle selected: ${bundleFile.name}`, "info");
+  });
+
+  setupDrop("dropPng", "pngInput", (files) => {
+    files.forEach((f) => {
+      if (!f.type.startsWith("image/")) {
+        log(`Skipped: ${f.name}`, "err");
+        return;
+      }
+      showPreview(f);
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = () => {
+        queue.push({
+          name: f.name.replace(/\.[^.]+$/, ""),
+          w: img.naturalWidth,
+          h: img.naturalHeight,
+          file: f,
+        });
+        renderQueue();
+        log(`Queued PNG: ${f.name} → m_Name "${f.name.replace(/\.[^.]+$/, "")}"`, "ok");
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    });
+  });
+
+  $("btnList").onclick = async () => {
+    if (!bundleFile) return;
+    log("Listing textures…", "info");
+    $("btnList").disabled = true;
+    const fd = new FormData();
+    fd.append("bundle", bundleFile, bundleFile.name);
+    try {
+      const res = await fetch("/api/list", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      const body = $("texBody");
+      if (!data.textures.length) {
+        body.innerHTML = `<tr><td colspan="3" style="color:var(--muted);text-align:center">No Texture2D found</td></tr>`;
+      } else {
+        body.innerHTML = data.textures.map((t) => `
+          <tr>
+            <td class="name">${esc(t.name)}</td>
+            <td>${t.width}×${t.height}</td>
+            <td>${t.path_id}</td>
+          </tr>`).join("");
+      }
+      $("bundleStatus").textContent = `${data.count} Texture2D · ${data.size_mb} MB`;
+      log(`Found ${data.count} Texture2D asset(s)`, "ok");
+    } catch (e) {
+      log(String(e.message || e), "err");
+    } finally {
+      $("btnList").disabled = false;
+    }
+  };
+
+  $("btnBuild").onclick = async () => {
+    if (!bundleFile || !queue.length) return;
+    log("Building modified bundle… (may take a while)", "info");
+    $("btnBuild").disabled = true;
+    const fd = new FormData();
+    fd.append("bundle", bundleFile, bundleFile.name);
+    queue.forEach((t) => fd.append("textures", t.file, t.file.name));
+    try {
+      const res = await fetch("/api/replace", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = cd.match(/filename="?([^"]+)"?/);
+      a.download = m ? m[1] : `replaced_${bundleFile.name}`;
+      a.href = URL.createObjectURL(blob);
+      a.click();
+      URL.revokeObjectURL(a.href);
+      log(`Download started (${(blob.size / 1024 / 1024).toFixed(2)} MB)`, "ok");
+    } catch (e) {
+      log(String(e.message || e), "err");
+    } finally {
+      $("btnBuild").disabled = false;
+    }
+  };
+
+  $("btnReset").onclick = () => {
+    bundleFile = null;
+    queue.length = 0;
+    $("bundleName").textContent = "";
+    $("pngName").textContent = "";
+    $("bundleStatus").textContent = "";
+    $("preview").classList.add("empty");
+    $("preview").textContent = "No image";
+    $("iName").textContent = $("iSize").textContent = $("iType").textContent = $("iBytes").textContent = "—";
+    $("texBody").innerHTML = `<tr><td colspan="3" style="color:var(--muted);text-align:center">Load a bundle and click List textures</td></tr>`;
+    $("btnList").disabled = true;
+    renderQueue();
+    logEl.textContent = "Ready.";
+    log("Reset.", "info");
+  };
+})();
+</script>
+</body>
+</html>

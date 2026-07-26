@@ -1,6 +1,3 @@
-python-telegram-bot==21.10
 UnityPy>=1.25.0
 Pillow>=10.0.0
-# optional keep-alive helpers if you deploy as Web Service instead of Background Worker
-# flask
-# gunicorn
+aiohttp>=3.9.0
