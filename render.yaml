@@ -1,0 +1,17 @@
+# Optional Blueprint for Render
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: worker
+    name: unity-texture-replacer-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false          # set manually in dashboard
+      - key: MAX_BUNDLE_MB
+        value: "80"
+      - key: MAX_TEXTURE_MB
+        value: "20"
