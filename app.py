@@ -16,7 +16,6 @@ import logging
 import os
 import re
 import tempfile
-import zipfile
 from pathlib import Path
 
 import UnityPy
@@ -32,6 +31,9 @@ logger = logging.getLogger(__name__)
 MAX_BUNDLE_MB = int(os.environ.get("MAX_BUNDLE_MB", "80"))
 MAX_TEXTURE_MB = int(os.environ.get("MAX_TEXTURE_MB", "20"))
 PORT = int(os.environ.get("PORT", "8080"))
+# Many mobile games strip TypeTree / version — set a modern fallback
+# Default suits many 32-bit / older mobile Unity games. Override via env.
+FALLBACK_UNITY = os.environ.get("FALLBACK_UNITY_VERSION", "2018.4.36f1")
 
 STATIC_DIR = Path(__file__).parent
 
@@ -40,21 +42,101 @@ STATIC_DIR = Path(__file__).parent
 # UnityPy helpers
 # ---------------------------------------------------------------------------
 
-def list_textures(data: bytes) -> list[dict]:
-    env = UnityPy.load(data)
-    out = []
-    for obj in env.objects:
-        if obj.type.name != "Texture2D":
-            continue
+def _configure_unitypy() -> None:
+    try:
+        UnityPy.config.FALLBACK_UNITY_VERSION = FALLBACK_UNITY
+    except Exception:
+        pass
+
+
+def _load_env(data: bytes):
+    """Load bundle bytes with fallbacks for stripped / odd headers."""
+    _configure_unitypy()
+    # Prefer BytesIO — some UnityPy builds treat raw bytes differently
+    try:
+        return UnityPy.load(io.BytesIO(data))
+    except Exception as e1:
+        logger.warning("load(BytesIO) failed: %s — retrying raw bytes", e1)
+        return UnityPy.load(data)
+
+
+def _type_name(obj) -> str:
+    t = getattr(obj, "type", None)
+    if t is None:
+        return ""
+    name = getattr(t, "name", None)
+    if callable(name):
+        try:
+            return str(name()) or ""
+        except Exception:
+            return ""
+    if name is not None:
+        return str(name)
+    return str(t)
+
+
+def _read_texture_info(obj) -> dict | None:
+    """
+    Read Texture2D metadata safely.
+    Prefer typetree (works when full class parse fails).
+    """
+    path_id = getattr(obj, "path_id", 0)
+    name = f"pathid_{path_id}"
+    width = 0
+    height = 0
+
+    # 1) typetree first (most resilient)
+    try:
+        tree = obj.read_typetree()
+        if isinstance(tree, dict):
+            name = tree.get("m_Name") or name
+            width = int(tree.get("m_Width") or 0)
+            height = int(tree.get("m_Height") or 0)
+            return {"name": name, "width": width, "height": height, "path_id": path_id}
+    except Exception as e:
+        logger.debug("typetree failed path_id=%s: %s", path_id, e)
+
+    # 2) full object read
+    try:
         tex = obj.read()
-        name = getattr(tex, "m_Name", None) or f"pathid_{obj.path_id}"
-        out.append(
-            {
-                "name": name,
-                "width": getattr(tex, "m_Width", 0),
-                "height": getattr(tex, "m_Height", 0),
-                "path_id": obj.path_id,
-            }
+        name = getattr(tex, "m_Name", None) or getattr(tex, "name", None) or name
+        width = int(getattr(tex, "m_Width", 0) or 0)
+        height = int(getattr(tex, "m_Height", 0) or 0)
+        return {"name": name, "width": width, "height": height, "path_id": path_id}
+    except Exception as e:
+        logger.debug("read() failed path_id=%s: %s", path_id, e)
+
+    return {"name": name, "width": width, "height": height, "path_id": path_id}
+
+
+def list_textures(data: bytes) -> list[dict]:
+    env = _load_env(data)
+    objects = list(env.objects) if env.objects is not None else []
+    if not objects:
+        # Some bundles only expose objects via files
+        for f in getattr(env, "files", {}).values():
+            objs = getattr(f, "objects", None)
+            if isinstance(objs, dict):
+                objects.extend(objs.values())
+            elif objs:
+                objects.extend(list(objs))
+
+    out = []
+    errors = 0
+    for obj in objects:
+        try:
+            if _type_name(obj) != "Texture2D":
+                continue
+            info = _read_texture_info(obj)
+            if info:
+                out.append(info)
+        except Exception:
+            errors += 1
+            logger.exception("Skip object")
+    if not out and errors:
+        raise RuntimeError(
+            f"Found objects but failed to parse Texture2D ({errors} errors). "
+            f"Try setting FALLBACK_UNITY_VERSION env (current: {FALLBACK_UNITY})."
         )
     return out
 
@@ -64,15 +146,29 @@ def replace_textures(bundle_bytes: bytes, replacements: dict[str, bytes]) -> byt
     replacements: { m_Name_lower: png_bytes }
     Returns modified bundle bytes (lz4).
     """
-    env = UnityPy.load(bundle_bytes)
+    env = _load_env(bundle_bytes)
     replaced = []
 
-    for obj in env.objects:
-        if obj.type.name != "Texture2D":
+    objects = list(env.objects) if env.objects is not None else []
+    for obj in objects:
+        if _type_name(obj) != "Texture2D":
             continue
-        tex = obj.read()
-        name = getattr(tex, "m_Name", None) or ""
-        key = name.lower()
+        try:
+            # Need full object for image write
+            tex = obj.read()
+        except Exception:
+            # Fallback: only typetree-known name, skip write
+            try:
+                tree = obj.read_typetree()
+                name = (tree or {}).get("m_Name") or ""
+            except Exception:
+                name = ""
+            if name.lower() in replacements:
+                logger.error("Matched %s but obj.read() failed — cannot replace", name)
+            continue
+
+        name = getattr(tex, "m_Name", None) or getattr(tex, "name", None) or ""
+        key = str(name).lower()
         if key not in replacements:
             continue
         try:
@@ -89,10 +185,10 @@ def replace_textures(bundle_bytes: bytes, replacements: dict[str, bytes]) -> byt
 
     if not replaced:
         raise ValueError(
-            "No textures matched. PNG filenames (without extension) must match Texture2D m_Name."
+            "No textures matched or could be written. "
+            "PNG filenames (without extension) must match Texture2D m_Name."
         )
 
-    # Write to temp file then read back (UnityPy save API)
     with tempfile.NamedTemporaryFile(suffix=".bundle", delete=False) as tmp:
         tmp_path = tmp.name
     try:

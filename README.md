@@ -1,6 +1,6 @@
 # Unity Texture Replacer (Web)
 
-Python + HTML on **Render**. 
+Python + HTML on **Render**. No Telegram.
 
 Upload a Unity `.bundle`, list Texture2D assets, replace textures with PNGs, download the modified bundle.
 
@@ -36,3 +36,16 @@ python app.py
 
 - Backend: `aiohttp` + `UnityPy` + `Pillow`
 - Frontend: single `index.html` (served by the same app)
+
+
+## If listing fails (`NoneType` / parse error)
+
+Some games strip Unity version / TypeTree from bundles.
+
+On Render, add env var:
+
+| Key | Example value |
+|-----|----------------|
+| `FALLBACK_UNITY_VERSION` | `2021.3.0f1` or `2022.3.0f1` or your game's Unity version |
+
+Redeploy after setting it. You can find the Unity version in the game's `globalgamemanagers` or APK libs.
