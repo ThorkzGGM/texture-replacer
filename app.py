@@ -307,33 +307,61 @@ def extract_asset(
 
 def replace_assets(bundle_bytes: bytes, replacements: list[dict]) -> tuple[bytes, list[str]]:
     """
-    replacements: list of {name, type?, data: bytes}
-    name matched case-insensitive to m_Name.
+    replacements: list of {name, type?, path_id?, data: bytes}
+    Match order: path_id (string) → type+name → name only.
     """
     env = _load_env(bundle_bytes)
     replaced: list[str] = []
-    lookup = {}
+
+    # Build lookups
+    by_pid: dict[str, dict] = {}
+    by_type_name: dict[tuple[str, str], dict] = {}
+    by_name: dict[str, dict] = {}
     for r in replacements:
-        key = (r.get("type") or "", str(r["name"]).lower())
-        lookup[key] = r
-        # also name-only key
-        lookup[("", str(r["name"]).lower())] = r
+        if r.get("path_id") is not None and str(r["path_id"]):
+            by_pid[str(r["path_id"])] = r
+        n = str(r["name"]).lower()
+        by_name[n] = r
+        by_type_name[(str(r.get("type") or ""), n)] = r
+        by_type_name[("", n)] = r
 
     for obj in _all_objects(env):
         tname = _type_name(obj)
         if tname not in SUPPORTED_TYPES:
             continue
+        obj_pid = str(getattr(obj, "path_id", ""))
+
+        rep = by_pid.get(obj_pid)
+        aname = None
+        if rep is None:
+            # need name — try typetree first (cheap), then read
+            try:
+                tree = obj.read_typetree()
+                if isinstance(tree, dict):
+                    aname = tree.get("m_Name")
+            except Exception:
+                pass
+            if not aname:
+                try:
+                    tmp = obj.read()
+                    aname = getattr(tmp, "m_Name", None) or getattr(tmp, "name", None)
+                except Exception:
+                    continue
+            key = str(aname).lower()
+            rep = by_type_name.get((tname, key)) or by_name.get(key)
+
+        if not rep:
+            continue
+
+        raw = rep["data"]
         try:
             data_obj = obj.read()
         except Exception:
+            logger.exception("read failed path_id=%s", obj_pid)
             continue
-        aname = getattr(data_obj, "m_Name", None) or getattr(data_obj, "name", None) or ""
-        key_typed = (tname, str(aname).lower())
-        key_any = ("", str(aname).lower())
-        rep = lookup.get(key_typed) or lookup.get(key_any)
-        if not rep:
-            continue
-        raw = rep["data"]
+
+        aname = getattr(data_obj, "m_Name", None) or getattr(data_obj, "name", None) or aname or rep.get("name") or obj_pid
+
         try:
             if tname == "Texture2D":
                 img = Image.open(io.BytesIO(raw)).convert("RGBA")
@@ -341,22 +369,65 @@ def replace_assets(bundle_bytes: bytes, replacements: list[dict]) -> tuple[bytes
                     data_obj.set_image(img)
                 else:
                     data_obj.image = img
+
             elif tname == "TextAsset":
-                # Prefer string if UTF-8 text; else bytes
                 try:
-                    text = raw.decode("utf-8")
-                    data_obj.m_Script = text
+                    data_obj.m_Script = raw.decode("utf-8")
                 except UnicodeDecodeError:
                     data_obj.m_Script = raw
+
             elif tname == "AudioClip":
-                # Best-effort: set samples dict if present
+                ok_audio = False
+                # 1) samples dict (converted audio)
                 samples = getattr(data_obj, "samples", None)
-                if isinstance(samples, dict) and samples:
-                    first_key = next(iter(samples.keys()))
-                    samples[first_key] = raw
-                    data_obj.samples = samples
-                else:
-                    data_obj.m_AudioData = list(raw) if not isinstance(raw, list) else raw
+                if isinstance(samples, dict) and len(samples) > 0:
+                    first_key = next(iter(list(samples.keys())))
+                    new_samples = dict(samples)
+                    new_samples[first_key] = raw
+                    try:
+                        data_obj.samples = new_samples
+                        ok_audio = True
+                    except Exception as e:
+                        logger.debug("samples assign failed: %s", e)
+                # 2) m_AudioData raw
+                if not ok_audio and hasattr(data_obj, "m_AudioData"):
+                    try:
+                        data_obj.m_AudioData = raw
+                        ok_audio = True
+                    except Exception:
+                        try:
+                            data_obj.m_AudioData = list(raw)
+                            ok_audio = True
+                        except Exception as e:
+                            logger.debug("m_AudioData failed: %s", e)
+                # 3) typetree raw patch for script-like fields
+                if not ok_audio:
+                    try:
+                        tree = obj.read_typetree()
+                        if isinstance(tree, dict):
+                            # common fields
+                            if "m_AudioData" in tree:
+                                tree["m_AudioData"] = list(raw)
+                            # resource size update if present
+                            if "m_Resource" in tree and isinstance(tree["m_Resource"], dict):
+                                tree["m_Resource"]["m_Size"] = len(raw)
+                            obj.save_typetree(tree)
+                            ok_audio = True
+                            # skip data_obj.save() path
+                            try:
+                                assets = getattr(obj, "assets_file", None)
+                                if assets is not None and hasattr(assets, "mark_changed"):
+                                    assets.mark_changed()
+                            except Exception:
+                                pass
+                            replaced.append(f"{tname}:{aname}")
+                            logger.info("Replaced %s %s via typetree (%s bytes)", tname, aname, len(raw))
+                            continue
+                    except Exception as e:
+                        logger.debug("typetree audio patch failed: %s", e)
+                if not ok_audio:
+                    logger.error("Could not write AudioClip data for %s", aname)
+                    continue
             else:
                 continue
 
@@ -369,12 +440,15 @@ def replace_assets(bundle_bytes: bytes, replacements: list[dict]) -> tuple[bytes
             except Exception:
                 pass
             replaced.append(f"{tname}:{aname}")
-            logger.info("Replaced %s %s", tname, aname)
+            logger.info("Replaced %s %s (%s bytes)", tname, aname, len(raw))
         except Exception:
             logger.exception("Failed replace %s %s", tname, aname)
 
     if not replaced:
-        raise ValueError("No matching assets replaced. Check names/types.")
+        raise ValueError(
+            "No matching assets replaced. Check names/types/path_id. "
+            "For audio, some clips use streaming/FSB formats that cannot be rewritten."
+        )
     out = _save_env_bytes(env)
     if len(out) < max(1024, int(len(bundle_bytes) * 0.05)):
         raise RuntimeError(
@@ -519,7 +593,7 @@ async def api_extract(request: web.Request) -> web.Response:
 
 async def api_replace(request: web.Request) -> web.Response:
     reader = await request.multipart()
-    sid = name = type_name = None
+    sid = name = type_name = path_id = None
     file_bytes = None
     while True:
         part = await reader.next()
@@ -531,6 +605,8 @@ async def api_replace(request: web.Request) -> web.Response:
             name = (await part.read(decode=False)).decode().strip()
         elif part.name == "type":
             type_name = (await part.read(decode=False)).decode().strip() or None
+        elif part.name == "path_id":
+            path_id = (await part.read(decode=False)).decode().strip() or None
         elif part.name in ("file", "texture", "textures", "png", "text", "audio"):
             file_bytes = await part.read(decode=False)
             if not name and part.filename:
@@ -539,15 +615,15 @@ async def api_replace(request: web.Request) -> web.Response:
     sess = SESSIONS.get(sid or "")
     if not sess:
         return web.json_response({"error": "Session expired — re-upload bundle"}, status=400)
-    if not file_bytes or not name:
-        return web.json_response({"error": "Need asset name + file"}, status=400)
+    if not file_bytes or not (name or path_id):
+        return web.json_response({"error": "Need asset name/path_id + file"}, status=400)
     if len(file_bytes) / (1024 * 1024) > MAX_FILE_MB:
         return web.json_response({"error": "File too large"}, status=400)
 
     try:
         new_bytes, just = replace_assets(
             sess["bundle_bytes"],
-            [{"name": name, "type": type_name, "data": file_bytes}],
+            [{"name": name or "", "type": type_name, "path_id": path_id, "data": file_bytes}],
         )
     except Exception as e:
         logger.exception("Replace failed")

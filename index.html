@@ -392,6 +392,7 @@
     fd.append("session_id", sessionId);
     fd.append("name", selected.name);
     fd.append("type", selected.type);
+    fd.append("path_id", String(selected.path_id));
     fd.append("file", replaceFile, replaceFile.name);
     try {
       const res = await fetch("/api/replace", { method: "POST", body: fd });
