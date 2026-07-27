@@ -49,6 +49,45 @@ def _configure_unitypy() -> None:
         pass
 
 
+
+def _save_env_bytes(env) -> bytes:
+    """Serialize environment back to a single bundle as bytes."""
+    # 1) Try each file that exposes .save() returning bytes (BundleFile)
+    for fname, fobj in list(getattr(env, "files", {}).items()):
+        save = getattr(fobj, "save", None)
+        if not callable(save):
+            continue
+        for packer in ("lz4", "none", "original"):
+            try:
+                data = save(packer=packer)
+                if isinstance(data, (bytes, bytearray)) and len(data) > 0:
+                    logger.info("Saved via %s.save(packer=%s) size=%s", type(fobj).__name__, packer, len(data))
+                    return bytes(data)
+            except TypeError:
+                try:
+                    data = save()
+                    if isinstance(data, (bytes, bytearray)) and len(data) > 0:
+                        return bytes(data)
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.debug("save packer=%s failed on %s: %s", packer, fname, e)
+
+    # 2) Fallback: env.save into a temp directory, then pick the largest file
+    tmp_dir = tempfile.mkdtemp(prefix="utr_out_")
+    try:
+        env.save(pack="lz4", out_path=tmp_dir)
+        files = sorted(Path(tmp_dir).rglob("*"), key=lambda p: p.stat().st_size if p.is_file() else 0, reverse=True)
+        for f in files:
+            if f.is_file() and f.stat().st_size > 0:
+                logger.info("Saved via env.save dir fallback: %s (%s bytes)", f.name, f.stat().st_size)
+                return f.read_bytes()
+        raise RuntimeError("env.save produced no output files")
+    finally:
+        import shutil
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def _load_env(data: bytes):
     """Load bundle bytes with fallbacks for stripped / odd headers."""
     _configure_unitypy()
@@ -92,7 +131,7 @@ def _read_texture_info(obj) -> dict | None:
             name = tree.get("m_Name") or name
             width = int(tree.get("m_Width") or 0)
             height = int(tree.get("m_Height") or 0)
-            return {"name": name, "width": width, "height": height, "path_id": path_id}
+            return {"name": name, "width": width, "height": height, "path_id": str(path_id)}
     except Exception as e:
         logger.debug("typetree failed path_id=%s: %s", path_id, e)
 
@@ -102,11 +141,11 @@ def _read_texture_info(obj) -> dict | None:
         name = getattr(tex, "m_Name", None) or getattr(tex, "name", None) or name
         width = int(getattr(tex, "m_Width", 0) or 0)
         height = int(getattr(tex, "m_Height", 0) or 0)
-        return {"name": name, "width": width, "height": height, "path_id": path_id}
+        return {"name": name, "width": width, "height": height, "path_id": str(path_id)}
     except Exception as e:
         logger.debug("read() failed path_id=%s: %s", path_id, e)
 
-    return {"name": name, "width": width, "height": height, "path_id": path_id}
+    return {"name": name, "width": width, "height": height, "path_id": str(path_id)}
 
 
 def list_textures(data: bytes) -> list[dict]:
@@ -142,7 +181,7 @@ def list_textures(data: bytes) -> list[dict]:
 
 
 
-def extract_texture_png(data: bytes, path_id: int | None = None, name: str | None = None) -> tuple[bytes, str, int, int]:
+def extract_texture_png(data: bytes, path_id: str | int | None = None, name: str | None = None) -> tuple[bytes, str, int, int]:
     """
     Extract one Texture2D as PNG bytes.
     Match by path_id (preferred) or m_Name (case-insensitive).
@@ -155,11 +194,16 @@ def extract_texture_png(data: bytes, path_id: int | None = None, name: str | Non
     for obj in objects:
         if _type_name(obj) != "Texture2D":
             continue
-        if path_id is not None and getattr(obj, "path_id", None) != path_id:
-            continue
-
-        # name filter if no path_id
-        if path_id is None and target_name:
+        obj_pid = str(getattr(obj, "path_id", ""))
+        # Prefer path_id match when provided (as string — avoids JS int precision loss)
+        if path_id is not None and str(path_id) != obj_pid:
+            # still allow name match as fallback when path_id fails
+            if not target_name:
+                continue
+            info = _read_texture_info(obj)
+            if not info or str(info["name"]).lower() != target_name:
+                continue
+        elif path_id is None and target_name:
             info = _read_texture_info(obj)
             if not info or str(info["name"]).lower() != target_name:
                 continue
@@ -233,16 +277,11 @@ def replace_textures(bundle_bytes: bytes, replacements: dict[str, bytes]) -> byt
             "PNG filenames (without extension) must match Texture2D m_Name."
         )
 
-    with tempfile.NamedTemporaryFile(suffix=".bundle", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
-        env.save(pack="lz4", out_path=tmp_path)
-        return Path(tmp_path).read_bytes()
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+    # Prefer BundleFile.save() → bytes (env.save expects a directory)
+    out_data = _save_env_bytes(env)
+    if not out_data:
+        raise RuntimeError("Could not serialize modified bundle")
+    return out_data
 
 
 def sanitize(name: str) -> str:
@@ -391,7 +430,7 @@ async def api_extract(request: web.Request) -> web.Response:
         elif part.name == "path_id":
             raw = (await part.read(decode=False)).decode("utf-8", errors="ignore").strip()
             if raw:
-                path_id = int(raw)
+                path_id = raw  # keep as string (JS cannot safely pass large int64)
         elif part.name == "name":
             name = (await part.read(decode=False)).decode("utf-8", errors="ignore").strip() or None
 

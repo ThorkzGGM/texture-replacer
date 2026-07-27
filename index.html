@@ -245,13 +245,17 @@
       const res = await fetch("/api/list", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
-      textures = data.textures || [];
+      textures = (data.textures || []).map(x => ({
+        ...x,
+        path_id: String(x.path_id),
+        name: String(x.name)
+      }));
       const body = $("texBody");
       if (!textures.length) {
         body.innerHTML = '<tr><td colspan="3" style="color:var(--muted);text-align:center">No Texture2D found</td></tr>';
       } else {
         body.innerHTML = textures.map((t, i) =>
-          `<tr class="clickable" data-i="${i}"><td class="name">${esc(t.name)}</td><td>${t.width}×${t.height}</td><td>${t.path_id}</td></tr>`
+          `<tr class="clickable" data-i="${i}"><td class="name">${esc(t.name)}</td><td>${t.width}×${t.height}</td><td>${esc(String(t.path_id))}</td></tr>`
         ).join("");
         body.querySelectorAll("tr.clickable").forEach((tr) => {
           tr.onclick = () => openTexture(+tr.dataset.i);
