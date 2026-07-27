@@ -6,131 +6,93 @@
 <title>Unity Texture Replacer</title>
 <style>
   :root {
-    --bg: #0f1115; --panel: #1a1d24; --border: #2a2f3a; --text: #e8eaed;
-    --muted: #9aa0a6; --accent: #7c9cff; --accent2: #5eead4;
-    --danger: #f87171; --ok: #4ade80; --radius: 12px;
+    --bg:#0f1115; --panel:#1a1d24; --border:#2a2f3a; --text:#e8eaed;
+    --muted:#9aa0a6; --accent:#7c9cff; --accent2:#5eead4;
+    --danger:#f87171; --ok:#4ade80; --radius:12px;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: "Segoe UI", system-ui, sans-serif;
-    background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.5;
-  }
-  header {
-    padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
-  }
-  header h1 { font-size: 1.15rem; font-weight: 600; }
-  header .badge {
-    font-size: 0.7rem; background: #243044; color: var(--accent);
-    padding: 0.2rem 0.55rem; border-radius: 999px;
-  }
-  main { max-width: 960px; margin: 0 auto; padding: 1.5rem; display: grid; gap: 1.25rem; }
-  .card {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 1.1rem 1.2rem;
-  }
-  .card h2 {
-    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--muted); margin-bottom: 0.85rem;
-  }
-  .drop {
-    border: 2px dashed var(--border); border-radius: 10px; padding: 1.4rem 1rem;
-    text-align: center; color: var(--muted); cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
-  }
-  .drop:hover, .drop.drag {
-    border-color: var(--accent); background: rgba(124, 156, 255, 0.06);
-  }
-  .drop strong { color: var(--text); display: block; margin-bottom: 0.2rem; }
-  .drop input { display: none; }
-  .file-name { margin-top: 0.5rem; font-size: 0.85rem; color: var(--accent2); word-break: break-all; }
-  .actions { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 1rem; }
-  button {
-    appearance: none; border: none; border-radius: 8px;
-    padding: 0.55rem 1rem; font-size: 0.9rem; font-weight: 560; cursor: pointer;
-  }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-ok { background: linear-gradient(135deg, #34d399, #10b981); color: #052e1a; }
-  .btn-secondary { background: #2a3140; color: var(--text); border: 1px solid var(--border); }
-  .btn-danger { background: #3a1f24; color: var(--danger); border: 1px solid #5a2a32; }
-  .list { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
-  .list table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  .list th, .list td { padding: 0.5rem 0.65rem; text-align: left; border-bottom: 1px solid var(--border); }
-  .list th {
-    position: sticky; top: 0; background: #22262f; color: var(--muted);
-    font-weight: 500; font-size: 0.72rem; text-transform: uppercase;
-  }
-  .list tr.clickable { cursor: pointer; }
-  .list tr.clickable:hover td { background: rgba(124, 156, 255, 0.1); }
-  .list td.name {
-    font-family: ui-monospace, monospace; color: var(--accent);
-    text-decoration: underline; text-underline-offset: 2px;
-  }
-  .log {
-    font-family: ui-monospace, monospace; font-size: 0.78rem;
-    background: #0a0c10; border: 1px solid var(--border); border-radius: 8px;
-    padding: 0.75rem; max-height: 140px; overflow: auto; white-space: pre-wrap; color: #a8b0bd;
-  }
-  .log .ok { color: var(--ok); } .log .err { color: var(--danger); } .log .info { color: var(--accent); }
-  .status { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; }
-  footer { text-align: center; padding: 1.5rem; color: var(--muted); font-size: 0.75rem; }
-  .hidden { display: none !important; }
-  .detail-layout {
-    display: grid; grid-template-columns: minmax(180px, 280px) 1fr; gap: 1.25rem;
-  }
-  @media (max-width: 700px) { .detail-layout { grid-template-columns: 1fr; } }
-  .tex-preview {
-    background: #0a0c10; border: 1px solid var(--border); border-radius: 10px;
-    min-height: 200px; display: flex; align-items: center; justify-content: center;
-    overflow: hidden; padding: 0.5rem;
-  }
-  .tex-preview img { max-width: 100%; max-height: 360px; object-fit: contain; }
-  .tex-preview .placeholder { color: var(--muted); font-size: 0.85rem; }
-  .info dl { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 0.85rem; font-size: 0.9rem; }
-  .info dt { color: var(--muted); }
-  .info dd { font-family: ui-monospace, monospace; font-size: 0.85rem; word-break: break-all; }
-  .replace-box {
-    margin-top: 1rem; padding: 1rem; border: 1px solid var(--border);
-    border-radius: 10px; background: #151820;
-  }
-  .replace-box h3 {
-    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
-    color: var(--muted); margin-bottom: 0.75rem;
-  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
+  header{padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
+  header h1{font-size:1.15rem;font-weight:600}
+  header .badge{font-size:.7rem;background:#243044;color:var(--accent);padding:.2rem .55rem;border-radius:999px}
+  main{max-width:960px;margin:0 auto;padding:1.5rem;display:grid;gap:1.25rem}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.2rem}
+  .card h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.85rem}
+  .drop{border:2px dashed var(--border);border-radius:10px;padding:1.4rem 1rem;text-align:center;color:var(--muted);cursor:pointer}
+  .drop:hover,.drop.drag{border-color:var(--accent);background:rgba(124,156,255,.06)}
+  .drop strong{color:var(--text);display:block;margin-bottom:.2rem}
+  .drop input{display:none}
+  .file-name{margin-top:.5rem;font-size:.85rem;color:var(--accent2);word-break:break-all}
+  .actions{display:flex;flex-wrap:wrap;gap:.55rem;margin-top:1rem}
+  button{appearance:none;border:none;border-radius:8px;padding:.55rem 1rem;font-size:.9rem;font-weight:560;cursor:pointer}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .btn-ok{background:linear-gradient(135deg,#34d399,#10b981);color:#052e1a}
+  .btn-primary{background:linear-gradient(135deg,#6b8cff,#5b6ef5);color:#fff}
+  .btn-secondary{background:#2a3140;color:var(--text);border:1px solid var(--border)}
+  .btn-danger{background:#3a1f24;color:var(--danger);border:1px solid #5a2a32}
+  .list{max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:8px}
+  .list table{width:100%;border-collapse:collapse;font-size:.85rem}
+  .list th,.list td{padding:.5rem .65rem;text-align:left;border-bottom:1px solid var(--border)}
+  .list th{position:sticky;top:0;background:#22262f;color:var(--muted);font-weight:500;font-size:.72rem;text-transform:uppercase}
+  .list tr.clickable{cursor:pointer}
+  .list tr.clickable:hover td{background:rgba(124,156,255,.1)}
+  .list td.name{font-family:ui-monospace,monospace;color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+  .list tr.replaced td.name{color:var(--ok)}
+  .list .tag{font-size:.65rem;background:#14532d;color:var(--ok);padding:.1rem .35rem;border-radius:4px;margin-left:.35rem}
+  .log{font-family:ui-monospace,monospace;font-size:.78rem;background:#0a0c10;border:1px solid var(--border);border-radius:8px;padding:.75rem;max-height:140px;overflow:auto;white-space:pre-wrap;color:#a8b0bd}
+  .log .ok{color:var(--ok)}.log .err{color:var(--danger)}.log .info{color:var(--accent)}
+  .status{font-size:.8rem;color:var(--muted);margin-top:.5rem}
+  footer{text-align:center;padding:1.5rem;color:var(--muted);font-size:.75rem}
+  .hidden{display:none!important}
+  .detail-layout{display:grid;grid-template-columns:minmax(180px,280px) 1fr;gap:1.25rem}
+  @media(max-width:700px){.detail-layout{grid-template-columns:1fr}}
+  .tex-preview{background:#0a0c10;border:1px solid var(--border);border-radius:10px;min-height:200px;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:.5rem}
+  .tex-preview img{max-width:100%;max-height:360px;object-fit:contain}
+  .tex-preview .placeholder{color:var(--muted);font-size:.85rem}
+  .info dl{display:grid;grid-template-columns:auto 1fr;gap:.35rem .85rem;font-size:.9rem}
+  .info dt{color:var(--muted)}
+  .info dd{font-family:ui-monospace,monospace;font-size:.85rem;word-break:break-all}
+  .replace-box{margin-top:1rem;padding:1rem;border:1px solid var(--border);border-radius:10px;background:#151820}
+  .replace-box h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.75rem}
+  .build-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;justify-content:space-between}
+  .build-bar .meta{font-size:.85rem;color:var(--muted)}
 </style>
 </head>
 <body>
 <header>
   <h1>Unity Texture Replacer</h1>
-  <span class="badge">click name → extract · replace · back</span>
+  <span class="badge">replace in session → build when done</span>
 </header>
 
 <main>
   <div id="viewList">
     <section class="card">
-      <h2>1 · Asset Bundle (.bundle)</h2>
+      <h2>1 · Asset Bundle</h2>
       <div class="drop" id="dropBundle">
         <strong>Drop .bundle here</strong>
         or click to choose
         <input type="file" id="bundleInput" accept=".bundle,.unity3d,.assets,*/*" />
         <div class="file-name" id="bundleName"></div>
       </div>
-      <div class="actions">
-        <button type="button" class="btn-secondary" id="btnList" disabled>List textures</button>
-        <button type="button" class="btn-danger" id="btnReset">Reset</button>
-      </div>
       <div class="status" id="bundleStatus"></div>
     </section>
 
-    <section class="card" style="margin-top:1.25rem">
-      <h2>Textures — click a name to open</h2>
+    <section class="card" id="listCard" style="margin-top:1.25rem">
+      <h2>Textures — click a name</h2>
       <div class="list">
         <table>
           <thead><tr><th>m_Name</th><th>Resolution</th><th>path_id</th></tr></thead>
           <tbody id="texBody">
-            <tr><td colspan="3" style="color:var(--muted);text-align:center">Load a bundle and click List textures</td></tr>
+            <tr><td colspan="3" style="color:var(--muted);text-align:center">Upload a bundle first</td></tr>
           </tbody>
         </table>
+      </div>
+      <div class="actions build-bar">
+        <div class="meta" id="replacedMeta">No replacements yet</div>
+        <div>
+          <button type="button" class="btn-primary" id="btnBuild" disabled>Build &amp; download .bundle</button>
+          <button type="button" class="btn-danger" id="btnReset">Reset</button>
+        </div>
       </div>
     </section>
   </div>
@@ -142,9 +104,7 @@
       </div>
       <h2>Texture detail</h2>
       <div class="detail-layout">
-        <div class="tex-preview" id="texPreview">
-          <span class="placeholder">Loading…</span>
-        </div>
+        <div class="tex-preview" id="texPreview"><span class="placeholder">Loading…</span></div>
         <div class="info">
           <dl>
             <dt>Name</dt><dd id="dName">—</dd>
@@ -152,10 +112,10 @@
             <dt>path_id</dt><dd id="dPathId">—</dd>
           </dl>
           <div class="actions">
-            <button type="button" class="btn-secondary" id="btnDownloadPng" disabled>Extract / Download PNG</button>
+            <button type="button" class="btn-secondary" id="btnDownloadPng" disabled>Download PNG</button>
           </div>
           <div class="replace-box">
-            <h3>Replace this texture</h3>
+            <h3>Replace this texture (keeps session — no download yet)</h3>
             <div class="drop" id="dropReplace" style="padding:1rem">
               <strong>Drop replacement PNG</strong>
               or click to choose
@@ -163,7 +123,7 @@
               <div class="file-name" id="replaceName"></div>
             </div>
             <div class="actions">
-              <button type="button" class="btn-ok" id="btnReplaceOne" disabled>Replace &amp; download .bundle</button>
+              <button type="button" class="btn-ok" id="btnReplace" disabled>Replace (no download)</button>
             </div>
           </div>
         </div>
@@ -173,17 +133,24 @@
 
   <section class="card">
     <h2>Log</h2>
-    <div class="log" id="log">Ready. Upload a .bundle, list textures, click a name.</div>
+    <div class="log" id="log">Ready. Upload a .bundle, click a texture, replace, then Build &amp; download.</div>
   </section>
 </main>
 
-<footer>Unity Texture Replacer · extract · replace · back</footer>
+<footer>Replace updates the session · Build downloads the full modified bundle</footer>
 
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const logEl = $("log");
-  let bundleFile = null, textures = [], selected = null, extractedPngBlob = null, replaceFile = null;
+
+  let sessionId = null;
+  let textures = [];
+  let replaced = [];
+  let selected = null;
+  let extractedPngBlob = null;
+  let replaceFile = null;
+  let bundleLabel = "";
 
   function log(msg, cls) {
     const d = document.createElement("div");
@@ -195,13 +162,41 @@
   function esc(s) {
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   }
+  function updateReplacedMeta() {
+    $("replacedMeta").textContent = replaced.length
+      ? `Replaced: ${replaced.join(", ")}`
+      : "No replacements yet";
+    $("btnBuild").disabled = !sessionId || !replaced.length;
+  }
+  function renderList() {
+    const body = $("texBody");
+    if (!textures.length) {
+      body.innerHTML = '<tr><td colspan="3" style="color:var(--muted);text-align:center">No Texture2D</td></tr>';
+      return;
+    }
+    body.innerHTML = textures.map((t, i) => {
+      const isRep = replaced.some(n => n.toLowerCase() === String(t.name).toLowerCase());
+      return `<tr class="clickable${isRep ? " replaced" : ""}" data-i="${i}">
+        <td class="name">${esc(t.name)}${isRep ? '<span class="tag">replaced</span>' : ""}</td>
+        <td>${t.width}×${t.height}</td>
+        <td>${esc(String(t.path_id))}</td>
+      </tr>`;
+    }).join("");
+    body.querySelectorAll("tr.clickable").forEach(tr => {
+      tr.onclick = () => openTexture(+tr.dataset.i);
+    });
+  }
   function showList() {
     $("viewList").classList.remove("hidden");
     $("viewDetail").classList.add("hidden");
-    selected = null; extractedPngBlob = null; replaceFile = null;
+    selected = null;
+    extractedPngBlob = null;
+    replaceFile = null;
     $("replaceName").textContent = "";
-    $("btnReplaceOne").disabled = true;
+    $("btnReplace").disabled = true;
     $("btnDownloadPng").disabled = true;
+    renderList();
+    updateReplacedMeta();
   }
   function showDetail() {
     $("viewList").classList.add("hidden");
@@ -210,20 +205,38 @@
   function setupDrop(zoneId, inputId, onFiles) {
     const zone = $(zoneId), input = $(inputId);
     zone.addEventListener("click", () => input.click());
-    zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("drag"); });
+    zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("drag"); });
     zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
-    zone.addEventListener("drop", (e) => {
+    zone.addEventListener("drop", e => {
       e.preventDefault(); zone.classList.remove("drag");
       if (e.dataTransfer.files?.length) onFiles([...e.dataTransfer.files]);
     });
     input.addEventListener("change", () => { if (input.files?.length) onFiles([...input.files]); });
   }
 
-  setupDrop("dropBundle", "bundleInput", (files) => {
-    bundleFile = files[0];
-    $("bundleName").textContent = `${bundleFile.name} (${(bundleFile.size/1024/1024).toFixed(2)} MB)`;
-    $("btnList").disabled = false;
-    log("Bundle selected: " + bundleFile.name, "info");
+  setupDrop("dropBundle", "bundleInput", async (files) => {
+    const f = files[0];
+    $("bundleName").textContent = `${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`;
+    log("Uploading " + f.name + "…", "info");
+    const fd = new FormData();
+    fd.append("bundle", f, f.name);
+    try {
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      sessionId = data.session_id;
+      textures = (data.textures || []).map(x => ({
+        ...x, path_id: String(x.path_id), name: String(x.name)
+      }));
+      replaced = data.replaced || [];
+      bundleLabel = data.filename;
+      $("bundleStatus").textContent = `${data.count} Texture2D · ${data.size_mb} MB · session ready`;
+      renderList();
+      updateReplacedMeta();
+      log("Loaded " + data.count + " textures — click a name", "ok");
+    } catch (e) {
+      log(String(e.message || e), "err");
+    }
   });
 
   setupDrop("dropReplace", "replaceInput", (files) => {
@@ -231,62 +244,27 @@
     if (!f.type.startsWith("image/")) { log("Not an image", "err"); return; }
     replaceFile = f;
     $("replaceName").textContent = f.name;
-    $("btnReplaceOne").disabled = !selected;
-    log("Replacement ready: " + f.name, "ok");
+    $("btnReplace").disabled = !selected || !sessionId;
+    log("PNG ready: " + f.name, "ok");
   });
-
-  $("btnList").onclick = async () => {
-    if (!bundleFile) return;
-    log("Listing textures…", "info");
-    $("btnList").disabled = true;
-    const fd = new FormData();
-    fd.append("bundle", bundleFile, bundleFile.name);
-    try {
-      const res = await fetch("/api/list", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || res.statusText);
-      textures = (data.textures || []).map(x => ({
-        ...x,
-        path_id: String(x.path_id),
-        name: String(x.name)
-      }));
-      const body = $("texBody");
-      if (!textures.length) {
-        body.innerHTML = '<tr><td colspan="3" style="color:var(--muted);text-align:center">No Texture2D found</td></tr>';
-      } else {
-        body.innerHTML = textures.map((t, i) =>
-          `<tr class="clickable" data-i="${i}"><td class="name">${esc(t.name)}</td><td>${t.width}×${t.height}</td><td>${esc(String(t.path_id))}</td></tr>`
-        ).join("");
-        body.querySelectorAll("tr.clickable").forEach((tr) => {
-          tr.onclick = () => openTexture(+tr.dataset.i);
-        });
-      }
-      $("bundleStatus").textContent = `${data.count} Texture2D · ${data.size_mb} MB · click a name`;
-      log("Found " + data.count + " Texture2D — click a name", "ok");
-    } catch (e) {
-      log(String(e.message || e), "err");
-    } finally {
-      $("btnList").disabled = false;
-    }
-  };
 
   async function openTexture(index) {
     selected = textures[index];
-    if (!selected || !bundleFile) return;
+    if (!selected || !sessionId) return;
     showDetail();
     $("dName").textContent = selected.name;
     $("dSize").textContent = selected.width + " × " + selected.height;
     $("dPathId").textContent = String(selected.path_id);
     $("texPreview").innerHTML = '<span class="placeholder">Extracting…</span>';
     $("btnDownloadPng").disabled = true;
-    $("btnReplaceOne").disabled = true;
+    $("btnReplace").disabled = true;
     replaceFile = null;
     $("replaceName").textContent = "";
     extractedPngBlob = null;
     log('Opening "' + selected.name + '"…', "info");
 
     const fd = new FormData();
-    fd.append("bundle", bundleFile, bundleFile.name);
+    fd.append("session_id", sessionId);
     fd.append("path_id", String(selected.path_id));
     fd.append("name", selected.name);
     try {
@@ -300,21 +278,25 @@
       const url = URL.createObjectURL(blob);
       $("texPreview").innerHTML = "";
       const img = document.createElement("img");
-      img.src = url;
-      img.alt = selected.name;
+      img.src = url; img.alt = selected.name;
       $("texPreview").appendChild(img);
       const w = res.headers.get("X-Texture-Width");
       const h = res.headers.get("X-Texture-Height");
       if (w && h) $("dSize").textContent = w + " × " + h;
       $("btnDownloadPng").disabled = false;
-      log('Extracted "' + selected.name + '"', "ok");
+      $("btnReplace").disabled = !replaceFile;
+      log('Showing "' + selected.name + '"', "ok");
     } catch (e) {
-      $("texPreview").innerHTML = '<span class="placeholder">Could not extract</span>';
+      $("texPreview").innerHTML = '<span class="placeholder">Could not extract preview</span>';
       log(String(e.message || e), "err");
+      $("btnReplace").disabled = !replaceFile;
     }
   }
 
-  $("btnBack").onclick = () => { showList(); log("Back to list", "info"); };
+  $("btnBack").onclick = () => {
+    showList();
+    log("Back to list", "info");
+  };
 
   $("btnDownloadPng").onclick = () => {
     if (!extractedPngBlob || !selected) return;
@@ -323,19 +305,49 @@
     a.download = selected.name + ".png";
     a.click();
     URL.revokeObjectURL(a.href);
-    log("Downloaded " + selected.name + ".png", "ok");
   };
 
-  $("btnReplaceOne").onclick = async () => {
-    if (!bundleFile || !selected || !replaceFile) return;
-    log('Replacing "' + selected.name + '"…', "info");
-    $("btnReplaceOne").disabled = true;
-    const renamed = new File([replaceFile], selected.name + ".png", { type: replaceFile.type || "image/png" });
+  $("btnReplace").onclick = async () => {
+    if (!sessionId || !selected || !replaceFile) return;
+    log('Replacing "' + selected.name + '" in session…', "info");
+    $("btnReplace").disabled = true;
     const fd = new FormData();
-    fd.append("bundle", bundleFile, bundleFile.name);
-    fd.append("textures", renamed, renamed.name);
+    fd.append("session_id", sessionId);
+    fd.append("name", selected.name);
+    fd.append("texture", replaceFile, selected.name + ".png");
     try {
       const res = await fetch("/api/replace", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      replaced = data.replaced || replaced;
+      if (data.preview_png_base64) {
+        const url = "data:image/png;base64," + data.preview_png_base64;
+        $("texPreview").innerHTML = "";
+        const img = document.createElement("img");
+        img.src = url; img.alt = selected.name;
+        $("texPreview").appendChild(img);
+        extractedPngBlob = null; // force re-extract if download png wanted
+        if (data.width && data.height) $("dSize").textContent = data.width + " × " + data.height;
+      }
+      log('Replaced "' + selected.name + '" — session updated (' + data.bundle_size_mb + ' MB). Go Back or replace more, then Build.', "ok");
+      updateReplacedMeta();
+    } catch (e) {
+      log(String(e.message || e), "err");
+    } finally {
+      $("btnReplace").disabled = false;
+    }
+  };
+
+  $("btnBuild").onclick = async () => {
+    if (!sessionId) return;
+    log("Building full bundle for download…", "info");
+    $("btnBuild").disabled = true;
+    try {
+      const res = await fetch("/api/build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || res.statusText);
@@ -344,28 +356,29 @@
       const a = document.createElement("a");
       const cd = res.headers.get("Content-Disposition") || "";
       const m = cd.match(/filename="?([^"]+)"?/);
-      a.download = m ? m[1] : "replaced_" + bundleFile.name;
+      a.download = m ? m[1] : "replaced_" + (bundleLabel || "bundle");
       a.href = URL.createObjectURL(blob);
       a.click();
       URL.revokeObjectURL(a.href);
       const outSz = res.headers.get("X-Output-Size");
       const inSz = res.headers.get("X-Original-Size");
-      let msg = 'Replaced "' + selected.name + '" — download started (' + (blob.size/1024/1024).toFixed(2) + ' MB)';
-      if (outSz && inSz) msg += ' [in ' + (inSz/1024/1024).toFixed(2) + ' → out ' + (outSz/1024/1024).toFixed(2) + ' MB]';
-      log(msg, "ok");
+      log(
+        "Download started: " + (blob.size/1024/1024).toFixed(2) + " MB" +
+        (inSz && outSz ? ` (original ${(+inSz/1024/1024).toFixed(2)} → ${(+outSz/1024/1024).toFixed(2)} MB)` : ""),
+        "ok"
+      );
     } catch (e) {
       log(String(e.message || e), "err");
     } finally {
-      $("btnReplaceOne").disabled = false;
+      updateReplacedMeta();
     }
   };
 
   $("btnReset").onclick = () => {
-    bundleFile = null; textures = []; selected = null; extractedPngBlob = null; replaceFile = null;
+    sessionId = null; textures = []; replaced = []; selected = null;
+    extractedPngBlob = null; replaceFile = null; bundleLabel = "";
     $("bundleName").textContent = "";
     $("bundleStatus").textContent = "";
-    $("texBody").innerHTML = '<tr><td colspan="3" style="color:var(--muted);text-align:center">Load a bundle and click List textures</td></tr>';
-    $("btnList").disabled = true;
     showList();
     logEl.textContent = "Ready.";
     log("Reset.", "info");
