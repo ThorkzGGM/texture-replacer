@@ -348,7 +348,11 @@
       a.href = URL.createObjectURL(blob);
       a.click();
       URL.revokeObjectURL(a.href);
-      log('Replaced "' + selected.name + '" — download started', "ok");
+      const outSz = res.headers.get("X-Output-Size");
+      const inSz = res.headers.get("X-Original-Size");
+      let msg = 'Replaced "' + selected.name + '" — download started (' + (blob.size/1024/1024).toFixed(2) + ' MB)';
+      if (outSz && inSz) msg += ' [in ' + (inSz/1024/1024).toFixed(2) + ' → out ' + (outSz/1024/1024).toFixed(2) + ' MB]';
+      log(msg, "ok");
     } catch (e) {
       log(String(e.message || e), "err");
     } finally {

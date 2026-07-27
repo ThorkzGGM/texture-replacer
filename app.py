@@ -51,38 +51,80 @@ def _configure_unitypy() -> None:
 
 
 def _save_env_bytes(env) -> bytes:
-    """Serialize environment back to a single bundle as bytes."""
-    # 1) Try each file that exposes .save() returning bytes (BundleFile)
-    for fname, fobj in list(getattr(env, "files", {}).items()):
+    """Serialize the full AssetBundle as bytes (not an inner CAB)."""
+    from UnityPy.files import BundleFile, SerializedFile
+
+    files = list(getattr(env, "files", {}).items())
+
+    # Prefer outer BundleFile (UnityFS / UnityWeb / UnityRaw) — full package
+    bundle_candidates = []
+    other_candidates = []
+    for fname, fobj in files:
+        if isinstance(fobj, BundleFile) or (
+            getattr(fobj, "signature", None) in ("UnityFS", "UnityWeb", "UnityRaw", "UnityArchive")
+        ):
+            bundle_candidates.append((fname, fobj))
+        else:
+            other_candidates.append((fname, fobj))
+
+    ordered = bundle_candidates + other_candidates
+    if not ordered:
+        # Nested: BundleFile may be the container of env itself in some loads
+        for fname, fobj in files:
+            ordered.append((fname, fobj))
+
+    last_err = None
+    for fname, fobj in ordered:
         save = getattr(fobj, "save", None)
         if not callable(save):
             continue
-        for packer in ("lz4", "none", "original"):
+        for packer in ("original", "lz4", "none"):
             try:
                 data = save(packer=packer)
-                if isinstance(data, (bytes, bytearray)) and len(data) > 0:
-                    logger.info("Saved via %s.save(packer=%s) size=%s", type(fobj).__name__, packer, len(data))
-                    return bytes(data)
             except TypeError:
                 try:
                     data = save()
-                    if isinstance(data, (bytes, bytearray)) and len(data) > 0:
-                        return bytes(data)
-                except Exception:
-                    pass
+                except Exception as e:
+                    last_err = e
+                    continue
             except Exception as e:
-                logger.debug("save packer=%s failed on %s: %s", packer, fname, e)
+                last_err = e
+                logger.debug("save %s packer=%s: %s", fname, packer, e)
+                continue
+            if isinstance(data, (bytes, bytearray)) and len(data) > 64:
+                logger.info(
+                    "Saved full bundle via %s (%s) packer=%s size=%s",
+                    type(fobj).__name__,
+                    fname,
+                    packer,
+                    len(data),
+                )
+                return bytes(data)
 
-    # 2) Fallback: env.save into a temp directory, then pick the largest file
+    # Directory fallback: write all changed files, then if a single main file exists use it;
+    # if multiple, pack as zip only as last resort — prefer largest UnityFS-looking file.
     tmp_dir = tempfile.mkdtemp(prefix="utr_out_")
     try:
-        env.save(pack="lz4", out_path=tmp_dir)
-        files = sorted(Path(tmp_dir).rglob("*"), key=lambda p: p.stat().st_size if p.is_file() else 0, reverse=True)
-        for f in files:
-            if f.is_file() and f.stat().st_size > 0:
-                logger.info("Saved via env.save dir fallback: %s (%s bytes)", f.name, f.stat().st_size)
-                return f.read_bytes()
-        raise RuntimeError("env.save produced no output files")
+        try:
+            env.save(pack="original", out_path=tmp_dir)
+        except Exception:
+            env.save(pack="lz4", out_path=tmp_dir)
+        produced = [f for f in Path(tmp_dir).rglob("*") if f.is_file()]
+        if not produced:
+            raise RuntimeError(f"env.save produced nothing ({last_err})")
+        # pick largest file (full bundle should dwarf inner CAB leftovers)
+        produced.sort(key=lambda f: f.stat().st_size, reverse=True)
+        best = produced[0]
+        data = best.read_bytes()
+        logger.info(
+            "Saved via dir fallback: %s (%s bytes); all=%s",
+            best.name,
+            len(data),
+            [(x.name, x.stat().st_size) for x in produced[:5]],
+        )
+        if len(data) < 128:
+            raise RuntimeError(f"Output too small ({len(data)} bytes) — save failed")
+        return data
     finally:
         import shutil
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -266,6 +308,14 @@ def replace_textures(bundle_bytes: bytes, replacements: dict[str, bytes]) -> byt
             else:
                 tex.image = img
             tex.save()
+            # Bubble change flags to parent SerializedFile / BundleFile
+            try:
+                reader = getattr(tex, "object_reader", None) or obj
+                assets = getattr(reader, "assets_file", None)
+                if assets is not None and hasattr(assets, "mark_changed"):
+                    assets.mark_changed()
+            except Exception:
+                pass
             replaced.append(name)
             logger.info("Replaced: %s", name)
         except Exception:
@@ -397,12 +447,32 @@ async def api_replace(request: web.Request) -> web.Response:
         return web.json_response({"error": f"Replace failed: {e}"}, status=500)
 
     out_name = f"replaced_{sanitize(bundle_name)}"
+    logger.info(
+        "Returning replaced bundle: in=%s out=%s bytes (%.2f MB)",
+        len(bundle_bytes),
+        len(out_bytes),
+        len(out_bytes) / (1024 * 1024),
+    )
+    # Guard: refuse obviously truncated output
+    if len(out_bytes) < max(1024, int(len(bundle_bytes) * 0.05)):
+        return web.json_response(
+            {
+                "error": (
+                    f"Saved output looks truncated ({len(out_bytes)} bytes vs "
+                    f"original {len(bundle_bytes)}). Bundle format may need "
+                    "FALLBACK_UNITY_VERSION or is unsupported."
+                )
+            },
+            status=500,
+        )
     return web.Response(
         body=out_bytes,
         headers={
             "Content-Type": "application/octet-stream",
             "Content-Disposition": f'attachment; filename="{out_name}"',
             "Content-Length": str(len(out_bytes)),
+            "X-Original-Size": str(len(bundle_bytes)),
+            "X-Output-Size": str(len(out_bytes)),
         },
     )
 
