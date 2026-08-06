@@ -2,95 +2,174 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Unity Asset Replacer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>unity-assets-replacer-notuabe</title>
 <style>
-  :root {
-    --bg:#0f1115; --panel:#1a1d24; --border:#2a2f3a; --text:#e8eaed;
-    --muted:#9aa0a6; --accent:#7c9cff; --accent2:#5eead4;
-    --danger:#f87171; --ok:#4ade80; --radius:12px;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
-  header{padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
-  header h1{font-size:1.15rem;font-weight:600}
-  header .badge{font-size:.7rem;background:#243044;color:var(--accent);padding:.2rem .55rem;border-radius:999px}
-  main{max-width:980px;margin:0 auto;padding:1.5rem;display:grid;gap:1.25rem}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.2rem}
-  .card h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.85rem}
-  .drop{border:2px dashed var(--border);border-radius:10px;padding:1.4rem 1rem;text-align:center;color:var(--muted);cursor:pointer}
-  .drop:hover,.drop.drag{border-color:var(--accent);background:rgba(124,156,255,.06)}
-  .drop strong{color:var(--text);display:block;margin-bottom:.2rem}
-  .drop input{display:none}
-  .file-name{margin-top:.5rem;font-size:.85rem;color:var(--accent2);word-break:break-all}
-  .actions{display:flex;flex-wrap:wrap;gap:.55rem;margin-top:1rem}
-  button{appearance:none;border:none;border-radius:8px;padding:.55rem 1rem;font-size:.9rem;font-weight:560;cursor:pointer}
-  button:disabled{opacity:.4;cursor:not-allowed}
-  .btn-ok{background:linear-gradient(135deg,#34d399,#10b981);color:#052e1a}
-  .btn-primary{background:linear-gradient(135deg,#6b8cff,#5b6ef5);color:#fff}
-  .btn-secondary{background:#2a3140;color:var(--text);border:1px solid var(--border)}
-  .btn-danger{background:#3a1f24;color:var(--danger);border:1px solid #5a2a32}
-  .list{max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px}
-  .list table{width:100%;border-collapse:collapse;font-size:.85rem}
-  .list th,.list td{padding:.45rem .65rem;text-align:left;border-bottom:1px solid var(--border)}
-  .list th{position:sticky;top:0;background:#22262f;color:var(--muted);font-weight:500;font-size:.72rem;text-transform:uppercase}
-  .list tr.clickable{cursor:pointer}
-  .list tr.clickable:hover td{background:rgba(124,156,255,.1)}
-  .list td.name{font-family:ui-monospace,monospace;color:var(--accent);text-decoration:underline;text-underline-offset:2px}
-  .list tr.replaced td.name{color:var(--ok)}
-  .tag{font-size:.65rem;padding:.1rem .35rem;border-radius:4px;margin-left:.35rem}
-  .tag-rep{background:#14532d;color:var(--ok)}
-  .tag-type{background:#1e293b;color:var(--accent2)}
-  .log{font-family:ui-monospace,monospace;font-size:.78rem;background:#0a0c10;border:1px solid var(--border);border-radius:8px;padding:.75rem;max-height:140px;overflow:auto;white-space:pre-wrap;color:#a8b0bd}
-  .log .ok{color:var(--ok)}.log .err{color:var(--danger)}.log .info{color:var(--accent)}
-  .status{font-size:.8rem;color:var(--muted);margin-top:.5rem}
-  footer{text-align:center;padding:1.5rem;color:var(--muted);font-size:.75rem}
-  .hidden{display:none!important}
-  .detail-layout{display:grid;grid-template-columns:minmax(200px,300px) 1fr;gap:1.25rem}
-  @media(max-width:700px){.detail-layout{grid-template-columns:1fr}}
-  .preview-box{background:#0a0c10;border:1px solid var(--border);border-radius:10px;min-height:200px;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:.5rem;flex-direction:column;gap:.5rem}
-  .preview-box img{max-width:100%;max-height:320px;object-fit:contain}
-  .preview-box audio{width:100%}
-  .preview-box .placeholder{color:var(--muted);font-size:.85rem}
-  .text-view{width:100%;min-height:180px;max-height:320px;overflow:auto;background:#0a0c10;color:#d1d5db;border:1px solid var(--border);border-radius:8px;padding:.75rem;font-family:ui-monospace,monospace;font-size:.8rem;white-space:pre-wrap}
-  .info dl{display:grid;grid-template-columns:auto 1fr;gap:.35rem .85rem;font-size:.9rem}
-  .info dt{color:var(--muted)}
-  .info dd{font-family:ui-monospace,monospace;font-size:.85rem;word-break:break-all}
-  .replace-box{margin-top:1rem;padding:1rem;border:1px solid var(--border);border-radius:10px;background:#151820}
-  .replace-box h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.75rem}
-  .build-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;justify-content:space-between}
-  .build-bar .meta{font-size:.85rem;color:var(--muted)}
-  .filters{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem}
-  .filters button{padding:.3rem .65rem;font-size:.75rem}
-  .filters button.active{outline:1px solid var(--accent)}
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --border: #d8dce3;
+  --text: #1a1d24;
+  --muted: #5c6570;
+  --accent: #2563eb;
+  --ok: #15803d;
+  --danger: #b91c1c;
+  --radius: 10px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.45;
+}
+header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 1.25rem;
+}
+header h1 { font-size: 1.1rem; font-weight: 650; }
+header p { font-size: 0.8rem; color: var(--muted); margin-top: 0.2rem; }
+main { max-width: 920px; margin: 0 auto; padding: 1rem; display: grid; gap: 1rem; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+}
+.card h2 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 0.7rem;
+}
+.drop {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 1.1rem;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+  background: #fafbfc;
+}
+.drop:hover, .drop.drag { border-color: var(--accent); background: #eff6ff; }
+.drop strong { color: var(--text); display: block; }
+.drop input { display: none; }
+.file-name { margin-top: 0.4rem; font-size: 0.85rem; color: var(--accent); word-break: break-all; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.85rem; }
+button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #fff;
+  color: var(--text);
+}
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-ok { background: var(--ok); color: #fff; border-color: var(--ok); }
+.btn-danger { background: #fff; color: var(--danger); border-color: #fecaca; }
+.list { max-height: 280px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+th, td { padding: 0.4rem 0.55rem; text-align: left; border-bottom: 1px solid var(--border); }
+th { position: sticky; top: 0; background: #f0f2f5; color: var(--muted); font-size: 0.7rem; text-transform: uppercase; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: #eff6ff; }
+td.name { font-family: ui-monospace, monospace; color: var(--accent); text-decoration: underline; }
+tr.replaced td.name { color: var(--ok); }
+.tag { font-size: 0.65rem; padding: 0.1rem 0.3rem; border-radius: 4px; margin-left: 0.25rem; background: #e8eef9; color: var(--accent); }
+.tag-rep { background: #dcfce7; color: var(--ok); }
+.log {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  background: #fafbfc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem;
+  max-height: 130px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: #334155;
+}
+.log .ok { color: var(--ok); }
+.log .err { color: var(--danger); }
+.log .info { color: var(--accent); }
+.status { font-size: 0.8rem; color: var(--muted); margin-top: 0.4rem; }
+footer { text-align: center; padding: 1.2rem; color: var(--muted); font-size: 0.75rem; }
+.hidden { display: none !important; }
+.detail-layout { display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 1rem; }
+@media (max-width: 700px) { .detail-layout { grid-template-columns: 1fr; } }
+.preview-box {
+  background: #fafbfc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 0.5rem;
+  flex-direction: column;
+}
+.preview-box img { max-width: 100%; max-height: 280px; object-fit: contain; }
+.text-view {
+  width: 100%; max-height: 260px; overflow: auto; padding: 0.6rem;
+  font-family: ui-monospace, monospace; font-size: 0.78rem; white-space: pre-wrap;
+}
+.info dl { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.7rem; font-size: 0.88rem; }
+.info dt { color: var(--muted); }
+.info dd { font-family: ui-monospace, monospace; font-size: 0.82rem; word-break: break-all; }
+.replace-box { margin-top: 0.9rem; padding: 0.85rem; border: 1px solid var(--border); border-radius: 8px; background: #fafbfc; }
+.replace-box h3 { font-size: 0.75rem; text-transform: uppercase; color: var(--muted); margin-bottom: 0.6rem; }
+.build-bar { display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: space-between; align-items: center; }
+.filters { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.65rem; }
+.filters button { padding: 0.28rem 0.55rem; font-size: 0.75rem; }
+.filters button.active { outline: 2px solid var(--accent); }
 </style>
 </head>
 <body>
 <header>
-  <h1>Unity Asset Replacer</h1>
-  <span class="badge">textures · text · audio · build when done</span>
+  <h1>unity-assets-replacer-notuabe</h1>
+  <p>Local Unity bundle tool. Textures, text, mesh export. Not UABEA.</p>
 </header>
-
 <main>
   <div id="viewList">
     <section class="card">
-      <h2>1 · Asset Bundle</h2>
+      <h2>1. Bundle</h2>
       <div class="drop" id="dropBundle">
-        <strong>Drop .bundle here</strong>
-        or click to choose
+        <strong>Tap or drop a .bundle file</strong>
         <input type="file" id="bundleInput" accept=".bundle,.unity3d,.assets,*/*" />
         <div class="file-name" id="bundleName"></div>
       </div>
       <div class="status" id="bundleStatus"></div>
     </section>
 
-    <section class="card" style="margin-top:1.25rem">
-      <h2>Assets — click a name</h2>
+    <section class="card">
+      <h2>2. Bulk replace by name</h2>
+      <div class="drop" id="dropBulk">
+        <strong>Drop PNG or TXT files</strong>
+        File name must match asset m_Name
+        <input type="file" id="bulkInput" multiple />
+        <div class="file-name" id="bulkName"></div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-ok" id="btnBulk" disabled>Replace all matched</button>
+      </div>
+      <div class="status" id="bulkStatus"></div>
+    </section>
+
+    <section class="card">
+      <h2>Assets</h2>
       <div class="filters" id="filters">
-        <button type="button" class="btn-secondary active" data-f="all">All</button>
-        <button type="button" class="btn-secondary" data-f="Texture2D">Textures</button>
-        <button type="button" class="btn-secondary" data-f="TextAsset">Text</button>
-        <button type="button" class="btn-secondary" data-f="AudioClip">Audio</button>
+        <button type="button" class="active" data-f="all">All</button>
+        <button type="button" data-f="Texture2D">Textures</button>
+        <button type="button" data-f="TextAsset">Text</button>
+        <button type="button" data-f="Mesh">Mesh</button>
+        <button type="button" data-f="Sprite">Sprite</button>
       </div>
       <div class="list">
         <table>
@@ -101,9 +180,10 @@
         </table>
       </div>
       <div class="actions build-bar">
-        <div class="meta" id="replacedMeta">No replacements yet</div>
-        <div>
-          <button type="button" class="btn-primary" id="btnBuild" disabled>Build &amp; download .bundle</button>
+        <div class="status" id="replacedMeta">No replacements yet</div>
+        <div class="actions" style="margin:0">
+          <button type="button" id="btnExportModels" disabled>Export models ZIP</button>
+          <button type="button" class="btn-primary" id="btnBuild" disabled>Build and download</button>
           <button type="button" class="btn-danger" id="btnReset">Reset</button>
         </div>
       </div>
@@ -112,32 +192,31 @@
 
   <div id="viewDetail" class="hidden">
     <section class="card">
-      <div class="actions" style="margin-top:0;margin-bottom:1rem">
-        <button type="button" class="btn-secondary" id="btnBack">← Back</button>
+      <div class="actions" style="margin-top:0;margin-bottom:0.8rem">
+        <button type="button" id="btnBack">Back</button>
       </div>
-      <h2>Asset detail</h2>
+      <h2>Asset</h2>
       <div class="detail-layout">
-        <div class="preview-box" id="previewBox"><span class="placeholder">Loading…</span></div>
+        <div class="preview-box" id="previewBox"><span style="color:var(--muted)">...</span></div>
         <div class="info">
           <dl>
-            <dt>Name</dt><dd id="dName">—</dd>
-            <dt>Type</dt><dd id="dType">—</dd>
-            <dt>Info</dt><dd id="dInfo">—</dd>
-            <dt>path_id</dt><dd id="dPathId">—</dd>
+            <dt>Name</dt><dd id="dName">-</dd>
+            <dt>Type</dt><dd id="dType">-</dd>
+            <dt>Info</dt><dd id="dInfo">-</dd>
+            <dt>path_id</dt><dd id="dPathId">-</dd>
           </dl>
           <div class="actions">
-            <button type="button" class="btn-secondary" id="btnDownloadAsset" disabled>Download extracted</button>
+            <button type="button" id="btnDownloadAsset" disabled>Download extracted</button>
           </div>
-          <div class="replace-box">
-            <h3 id="replaceHint">Replace (session only — no download yet)</h3>
-            <div class="drop" id="dropReplace" style="padding:1rem">
+          <div class="replace-box" id="replaceBox">
+            <h3>Replace (stays in session)</h3>
+            <div class="drop" id="dropReplace" style="padding:0.9rem">
               <strong id="dropReplaceLabel">Drop replacement file</strong>
-              or click to choose
               <input type="file" id="replaceInput" />
               <div class="file-name" id="replaceName"></div>
             </div>
             <div class="actions">
-              <button type="button" class="btn-ok" id="btnReplace" disabled>Replace (no download)</button>
+              <button type="button" class="btn-ok" id="btnReplace" disabled>Replace</button>
             </div>
           </div>
         </div>
@@ -147,26 +226,16 @@
 
   <section class="card">
     <h2>Log</h2>
-    <div class="log" id="log">Ready. Supports Texture2D (PNG), TextAsset (txt/any text), AudioClip (mp3/wav…).</div>
+    <div class="log" id="log">Ready. Upload a .bundle to start.</div>
   </section>
 </main>
-
-<footer>Textures · Text · Audio · Replace in session · Build full bundle</footer>
-
+<footer>unity-assets-replacer-notuabe · runs on Termux or PC · localhost only</footer>
 <script>
 (() => {
-  const $ = (id) => document.getElementById(id);
+  const $ = id => document.getElementById(id);
   const logEl = $("log");
-
-  let sessionId = null;
-  let assets = [];
-  let replaced = [];
-  let selected = null;
-  let extractedBlob = null;
-  let extractedName = null;
-  let replaceFile = null;
-  let filter = "all";
-  let bundleLabel = "";
+  let sessionId = null, assets = [], replaced = [], selected = null;
+  let extractedBlob = null, extractedName = null, replaceFile = null, bulkFiles = [], filter = "all", bundleLabel = "";
 
   function log(msg, cls) {
     const d = document.createElement("div");
@@ -179,32 +248,32 @@
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   }
   function infoCell(a) {
-    if (a.type === "Texture2D") return `${a.width}×${a.height}`;
-    if (a.size) return `${(a.size/1024).toFixed(1)} KB`;
-    return "—";
+    if (a.type === "Texture2D" || a.type === "Sprite") return a.width + "x" + a.height;
+    if (a.type === "Mesh") return a.size ? a.size + " verts" : "mesh";
+    if (a.size) return (a.size / 1024).toFixed(1) + " KB";
+    return "-";
   }
   function updateMeta() {
-    $("replacedMeta").textContent = replaced.length
-      ? `Replaced: ${replaced.join(", ")}`
-      : "No replacements yet";
+    $("replacedMeta").textContent = replaced.length ? ("Replaced: " + replaced.join(", ")) : "No replacements yet";
     $("btnBuild").disabled = !sessionId || !replaced.length;
+    $("btnExportModels").disabled = !sessionId;
+    $("btnBulk").disabled = !sessionId || !bulkFiles.length;
   }
   function renderList() {
-    const body = $("assetBody");
     const rows = assets.filter(a => filter === "all" || a.type === filter);
+    const body = $("assetBody");
     if (!rows.length) {
       body.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center">No assets</td></tr>';
       return;
     }
-    body.innerHTML = rows.map((a) => {
+    body.innerHTML = rows.map(a => {
       const i = assets.indexOf(a);
       const isRep = replaced.some(n => n.toLowerCase() === String(a.name).toLowerCase());
-      return `<tr class="clickable${isRep?" replaced":""}" data-i="${i}">
-        <td class="name">${esc(a.name)}${isRep?'<span class="tag tag-rep">replaced</span>':""}</td>
-        <td><span class="tag tag-type">${esc(a.type)}</span></td>
+      return `<tr class="clickable${isRep ? " replaced" : ""}" data-i="${i}">
+        <td class="name">${esc(a.name)}${isRep ? '<span class="tag tag-rep">ok</span>' : ""}</td>
+        <td><span class="tag">${esc(a.type)}</span></td>
         <td>${esc(infoCell(a))}</td>
-        <td>${esc(String(a.path_id))}</td>
-      </tr>`;
+        <td>${esc(String(a.path_id))}</td></tr>`;
     }).join("");
     body.querySelectorAll("tr.clickable").forEach(tr => {
       tr.onclick = () => openAsset(+tr.dataset.i);
@@ -213,11 +282,8 @@
   function showList() {
     $("viewList").classList.remove("hidden");
     $("viewDetail").classList.add("hidden");
-    selected = null; extractedBlob = null; replaceFile = null;
-    $("replaceName").textContent = "";
-    $("btnReplace").disabled = true;
-    $("btnDownloadAsset").disabled = true;
-    renderList(); updateMeta();
+    renderList();
+    updateMeta();
   }
   function showDetail() {
     $("viewList").classList.add("hidden");
@@ -225,26 +291,15 @@
   }
   function setupDrop(zoneId, inputId, onFiles) {
     const zone = $(zoneId), input = $(inputId);
-    zone.addEventListener("click", () => input.click());
-    zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("drag"); });
-    zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
-    zone.addEventListener("drop", e => {
-      e.preventDefault(); zone.classList.remove("drag");
-      if (e.dataTransfer.files?.length) onFiles([...e.dataTransfer.files]);
-    });
-    input.addEventListener("change", () => { if (input.files?.length) onFiles([...input.files]); });
-  }
-  function acceptForType(t) {
-    if (t === "Texture2D") return "image/png,image/*";
-    if (t === "TextAsset") return ".txt,.json,.xml,.csv,.bytes,text/*,*/*";
-    if (t === "AudioClip") return "audio/mpeg,audio/mp3,audio/wav,audio/ogg,.mp3,.wav,.ogg,*/*";
-    return "*/*";
-  }
-  function hintForType(t) {
-    if (t === "Texture2D") return "Drop PNG / image";
-    if (t === "TextAsset") return "Drop TXT / text / any file as bytes";
-    if (t === "AudioClip") return "Drop MP3 / WAV / OGG";
-    return "Drop replacement file";
+    zone.onclick = () => input.click();
+    zone.ondragover = e => { e.preventDefault(); zone.classList.add("drag"); };
+    zone.ondragleave = () => zone.classList.remove("drag");
+    zone.ondrop = e => {
+      e.preventDefault();
+      zone.classList.remove("drag");
+      if (e.dataTransfer.files && e.dataTransfer.files.length) onFiles([...e.dataTransfer.files]);
+    };
+    input.onchange = () => { if (input.files && input.files.length) onFiles([...input.files]); };
   }
 
   document.querySelectorAll("#filters button").forEach(btn => {
@@ -255,10 +310,10 @@
     };
   });
 
-  setupDrop("dropBundle", "bundleInput", async (files) => {
+  setupDrop("dropBundle", "bundleInput", async files => {
     const f = files[0];
-    $("bundleName").textContent = `${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`;
-    log("Uploading " + f.name + "…", "info");
+    $("bundleName").textContent = f.name + " (" + (f.size / 1024 / 1024).toFixed(2) + " MB)";
+    log("Uploading...", "info");
     const fd = new FormData();
     fd.append("bundle", f, f.name);
     try {
@@ -266,45 +321,51 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
       sessionId = data.session_id;
-      assets = (data.assets || []).map(x => ({...x, path_id: String(x.path_id), name: String(x.name)}));
+      assets = (data.assets || []).map(x => ({ ...x, path_id: String(x.path_id), name: String(x.name) }));
       replaced = data.replaced || [];
       bundleLabel = data.filename;
       const c = data.counts || {};
       $("bundleStatus").textContent =
-        `${data.count} assets · ${data.size_mb} MB · ` +
-        `tex ${c.Texture2D||0} · text ${c.TextAsset||0} · audio ${c.AudioClip||0}`;
-      renderList(); updateMeta();
+        data.count + " assets, " + data.size_mb + " MB, tex " + (c.Texture2D || 0) +
+        ", text " + (c.TextAsset || 0) + ", mesh " + (c.Mesh || 0);
+      renderList();
+      updateMeta();
       log("Loaded " + data.count + " assets", "ok");
     } catch (e) {
       log(String(e.message || e), "err");
     }
   });
 
-  setupDrop("dropReplace", "replaceInput", (files) => {
+  setupDrop("dropBulk", "bulkInput", files => {
+    bulkFiles = files;
+    $("bulkName").textContent = files.length + " file(s)";
+    updateMeta();
+  });
+
+  setupDrop("dropReplace", "replaceInput", files => {
     replaceFile = files[0];
     $("replaceName").textContent = replaceFile.name;
     $("btnReplace").disabled = !selected || !sessionId;
-    log("File ready: " + replaceFile.name, "ok");
   });
 
-  async function openAsset(index) {
-    selected = assets[index];
+  async function openAsset(i) {
+    selected = assets[i];
     if (!selected || !sessionId) return;
     showDetail();
     $("dName").textContent = selected.name;
     $("dType").textContent = selected.type;
     $("dInfo").textContent = infoCell(selected);
     $("dPathId").textContent = String(selected.path_id);
-    $("previewBox").innerHTML = '<span class="placeholder">Loading…</span>';
+    $("previewBox").innerHTML = '<span style="color:var(--muted)">Loading...</span>';
     $("btnDownloadAsset").disabled = true;
     $("btnReplace").disabled = true;
     replaceFile = null;
     $("replaceName").textContent = "";
     extractedBlob = null;
-    $("replaceInput").accept = acceptForType(selected.type);
-    $("dropReplaceLabel").textContent = hintForType(selected.type);
-    $("replaceHint").textContent = "Replace " + selected.type + " (session only)";
-    log('Opening "' + selected.name + '" (' + selected.type + ")…", "info");
+    const canReplace = ["Texture2D", "Sprite", "TextAsset"].includes(selected.type);
+    $("replaceBox").style.display = canReplace ? "" : "none";
+    $("dropReplaceLabel").textContent = selected.type === "TextAsset" ? "Drop TXT" : "Drop PNG";
+    $("replaceInput").accept = selected.type === "TextAsset" ? ".txt,.json,text/*,*/*" : "image/png,image/*";
 
     const fd = new FormData();
     fd.append("session_id", sessionId);
@@ -313,81 +374,68 @@
     fd.append("type", selected.type);
     try {
       const res = await fetch("/api/extract", { method: "POST", body: fd });
-      const kind = res.headers.get("X-Asset-Kind");
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || res.statusText);
       }
-      if (kind === "texture" || (res.headers.get("Content-Type") || "").includes("image")) {
+      const kind = res.headers.get("X-Asset-Kind");
+      const ct = res.headers.get("Content-Type") || "";
+      if (kind === "texture" || ct.indexOf("image") >= 0) {
         const blob = await res.blob();
         extractedBlob = blob;
         extractedName = selected.name + ".png";
         const url = URL.createObjectURL(blob);
         $("previewBox").innerHTML = "";
         const img = document.createElement("img");
-        img.src = url; img.alt = selected.name;
+        img.src = url;
         $("previewBox").appendChild(img);
-        const w = res.headers.get("X-Texture-Width");
-        const h = res.headers.get("X-Texture-Height");
-        if (w && h) $("dInfo").textContent = w + " × " + h;
-      } else if (kind === "audio" || (res.headers.get("Content-Type") || "").startsWith("audio")) {
+      } else if (kind === "mesh" || (res.headers.get("Content-Disposition") || "").indexOf(".obj") >= 0) {
         const blob = await res.blob();
-        const ext = res.headers.get("X-Audio-Ext") || "bin";
         extractedBlob = blob;
-        extractedName = selected.name + "." + ext;
-        const url = URL.createObjectURL(blob);
+        extractedName = selected.name + ".obj";
+        const text = await blob.text();
         $("previewBox").innerHTML = "";
-        const audio = document.createElement("audio");
-        audio.controls = true; audio.src = url;
-        $("previewBox").appendChild(audio);
-        $("dInfo").textContent = (blob.size/1024).toFixed(1) + " KB · " + ext;
+        const pre = document.createElement("div");
+        pre.className = "text-view";
+        pre.textContent = text.slice(0, 4000) + (text.length > 4000 ? "\n..." : "");
+        $("previewBox").appendChild(pre);
       } else {
-        // text JSON
         const data = await res.json();
-        if (data.kind === "text") {
-          if (data.is_binary) {
-            const raw = Uint8Array.from(atob(data.raw_base64), c => c.charCodeAt(0));
-            extractedBlob = new Blob([raw]);
-            extractedName = selected.name + ".bytes";
-            $("previewBox").innerHTML = `<div class="placeholder">Binary TextAsset · ${data.size} bytes</div>`;
-          } else {
-            extractedBlob = new Blob([data.text || ""], { type: "text/plain" });
-            extractedName = selected.name + ".txt";
-            $("previewBox").innerHTML = "";
-            const pre = document.createElement("div");
-            pre.className = "text-view";
-            pre.textContent = data.text || "";
-            $("previewBox").appendChild(pre);
-            $("dInfo").textContent = (data.size || 0) + " bytes · text";
-          }
+        if (data.is_binary) {
+          const raw = Uint8Array.from(atob(data.raw_base64), c => c.charCodeAt(0));
+          extractedBlob = new Blob([raw]);
+          extractedName = selected.name + ".bytes";
+          $("previewBox").innerHTML = '<span style="color:var(--muted)">Binary TextAsset</span>';
         } else {
-          throw new Error("Unexpected extract response");
+          extractedBlob = new Blob([data.text || ""], { type: "text/plain" });
+          extractedName = selected.name + ".txt";
+          $("previewBox").innerHTML = "";
+          const pre = document.createElement("div");
+          pre.className = "text-view";
+          pre.textContent = data.text || "";
+          $("previewBox").appendChild(pre);
         }
       }
       $("btnDownloadAsset").disabled = !extractedBlob;
-      $("btnReplace").disabled = !replaceFile;
       log('Opened "' + selected.name + '"', "ok");
     } catch (e) {
-      $("previewBox").innerHTML = '<span class="placeholder">Could not extract</span>';
+      $("previewBox").innerHTML = '<span style="color:var(--muted)">Could not extract</span>';
       log(String(e.message || e), "err");
     }
   }
 
-  $("btnBack").onclick = () => { showList(); log("Back to list", "info"); };
-
+  $("btnBack").onclick = () => showList();
   $("btnDownloadAsset").onclick = () => {
     if (!extractedBlob) return;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(extractedBlob);
-    a.download = extractedName || "asset.bin";
+    a.download = extractedName || "asset";
     a.click();
-    URL.revokeObjectURL(a.href);
   };
 
   $("btnReplace").onclick = async () => {
     if (!sessionId || !selected || !replaceFile) return;
-    log('Replacing "' + selected.name + '"…', "info");
-    $("btnReplace").disabled = true;
+    log("Replacing...", "info");
     const fd = new FormData();
     fd.append("session_id", sessionId);
     fd.append("name", selected.name);
@@ -399,45 +447,77 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
       replaced = data.replaced || replaced;
-      const p = data.preview;
-      if (p?.kind === "texture" && p.png_base64) {
+      if (data.preview && data.preview.kind === "texture" && data.preview.png_base64) {
         $("previewBox").innerHTML = "";
         const img = document.createElement("img");
-        img.src = "data:image/png;base64," + p.png_base64;
+        img.src = "data:image/png;base64," + data.preview.png_base64;
         $("previewBox").appendChild(img);
-        if (p.width) $("dInfo").textContent = p.width + " × " + p.height;
-      } else if (p?.kind === "text") {
-        if (p.is_binary) {
-          $("previewBox").innerHTML = `<div class="placeholder">Binary TextAsset · ${p.size} bytes</div>`;
-        } else {
-          $("previewBox").innerHTML = "";
-          const pre = document.createElement("div");
-          pre.className = "text-view";
-          pre.textContent = p.text || "";
-          $("previewBox").appendChild(pre);
-        }
-      } else if (p?.kind === "audio" && p.audio_base64) {
-        const bin = Uint8Array.from(atob(p.audio_base64), c => c.charCodeAt(0));
-        const blob = new Blob([bin]);
-        const url = URL.createObjectURL(blob);
+      } else if (data.preview && data.preview.kind === "text" && !data.preview.is_binary) {
         $("previewBox").innerHTML = "";
-        const audio = document.createElement("audio");
-        audio.controls = true; audio.src = url;
-        $("previewBox").appendChild(audio);
+        const pre = document.createElement("div");
+        pre.className = "text-view";
+        pre.textContent = data.preview.text || "";
+        $("previewBox").appendChild(pre);
       }
-      log('Replaced "' + selected.name + '" in session (' + data.bundle_size_mb + " MB). Back or Build.", "ok");
+      log("Replaced in session. Go Back or Build.", "ok");
       updateMeta();
     } catch (e) {
       log(String(e.message || e), "err");
-    } finally {
-      $("btnReplace").disabled = false;
+    }
+  };
+
+  $("btnBulk").onclick = async () => {
+    if (!sessionId || !bulkFiles.length) return;
+    log("Bulk replace...", "info");
+    const fd = new FormData();
+    fd.append("session_id", sessionId);
+    bulkFiles.forEach(f => fd.append("files", f, f.name));
+    try {
+      const res = await fetch("/api/bulk_replace", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      replaced = data.replaced || replaced;
+      updateMeta();
+      renderList();
+      log(data.message || "Bulk done", "ok");
+      if (data.extras && data.extras.length) {
+        log("Extras: " + data.extras.map(e => e.name || e.m_Name).join(", "), "info");
+      }
+      $("bulkStatus").textContent = data.message || "";
+    } catch (e) {
+      log(String(e.message || e), "err");
+    }
+  };
+
+  $("btnExportModels").onclick = async () => {
+    if (!sessionId) return;
+    log("Exporting models ZIP...", "info");
+    try {
+      const res = await fetch("/api/export_models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = cd.match(/filename="?([^"]+)"?/);
+      a.download = m ? m[1] : ("models_" + bundleLabel + ".zip");
+      a.href = URL.createObjectURL(blob);
+      a.click();
+      log("Models ZIP: " + (blob.size / 1024 / 1024).toFixed(2) + " MB", "ok");
+    } catch (e) {
+      log(String(e.message || e), "err");
     }
   };
 
   $("btnBuild").onclick = async () => {
     if (!sessionId) return;
-    log("Building full bundle…", "info");
-    $("btnBuild").disabled = true;
+    log("Building full bundle...", "info");
     try {
       const res = await fetch("/api/build", {
         method: "POST",
@@ -452,29 +532,27 @@
       const a = document.createElement("a");
       const cd = res.headers.get("Content-Disposition") || "";
       const m = cd.match(/filename="?([^"]+)"?/);
-      a.download = m ? m[1] : "replaced_" + (bundleLabel || "bundle");
+      a.download = m ? m[1] : ("replaced_" + bundleLabel);
       a.href = URL.createObjectURL(blob);
       a.click();
-      URL.revokeObjectURL(a.href);
-      const outSz = res.headers.get("X-Output-Size");
-      const inSz = res.headers.get("X-Original-Size");
-      log(
-        "Download: " + (blob.size/1024/1024).toFixed(2) + " MB" +
-        (inSz && outSz ? ` (in ${(+inSz/1024/1024).toFixed(2)} → out ${(+outSz/1024/1024).toFixed(2)})` : ""),
-        "ok"
-      );
+      log("Download: " + (blob.size / 1024 / 1024).toFixed(2) + " MB", "ok");
     } catch (e) {
       log(String(e.message || e), "err");
-    } finally {
-      updateMeta();
     }
   };
 
   $("btnReset").onclick = () => {
-    sessionId = null; assets = []; replaced = []; selected = null;
-    extractedBlob = null; replaceFile = null; bundleLabel = "";
+    sessionId = null;
+    assets = [];
+    replaced = [];
+    selected = null;
+    bulkFiles = [];
+    extractedBlob = null;
+    replaceFile = null;
     $("bundleName").textContent = "";
     $("bundleStatus").textContent = "";
+    $("bulkName").textContent = "";
+    $("bulkStatus").textContent = "";
     showList();
     logEl.textContent = "Ready.";
     log("Reset.", "info");
