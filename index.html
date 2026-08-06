@@ -480,6 +480,7 @@ footer {
         <button type="button" class="chip" data-f="TextAsset">Text</button>
         <button type="button" class="chip" data-f="Mesh">Mesh</button>
         <button type="button" class="chip" data-f="AnimationClip">Animation</button>
+        <button type="button" class="chip" data-f="AudioClip">Audio</button>
         <button type="button" class="chip" data-f="Sprite">Sprite</button>
       </div>
       <div class="list">
@@ -585,6 +586,11 @@ footer {
   function infoCell(a) {
     if (a.type === "Texture2D" || a.type === "Sprite") return a.width + " × " + a.height;
     if (a.type === "Mesh") return a.size ? a.size + " verts" : "mesh";
+    if (a.type === "AudioClip") {
+      var s = a.size ? ((a.size / 1024).toFixed(1) + " KB") : "audio";
+      return a.width ? (s + " · " + a.width + " Hz") : s;
+    }
+    if (a.type === "AnimationClip") return a.size ? ((a.size / 1024).toFixed(1) + " KB") : "anim";
     if (a.size) return (a.size / 1024).toFixed(1) + " KB";
     return "-";
   }
@@ -750,8 +756,11 @@ footer {
     } else if (selected.type === "Texture2D" || selected.type === "Sprite") {
       $("dropReplaceLabel").textContent = "Drop replacement PNG or .dat";
       $("replaceInput").accept = "image/png,image/*,.dat,*/*";
+    } else if (selected.type === "AudioClip") {
+      $("dropReplaceLabel").textContent = "Drop .dat from Export .dat (same clip only)";
+      $("replaceInput").accept = ".dat,application/octet-stream,*/*";
     } else {
-      $("dropReplaceLabel").textContent = "Drop replacement .dat (raw)";
+      $("dropReplaceLabel").textContent = "Drop .dat from Export .dat (same asset only)";
       $("replaceInput").accept = ".dat,application/octet-stream,*/*";
     }
 
@@ -782,6 +791,11 @@ footer {
         extractedBlob = blob;
         extractedName = selected.name + ".obj";
         $("previewBox").innerHTML = '<span style="color:var(--muted)">Mesh (OBJ)</span>';
+      } else if (kind === "audio" || (res.headers.get("Content-Type") || "").indexOf("audio") >= 0) {
+        const blob = await res.blob();
+        extractedBlob = blob;
+        extractedName = selected.name + ".wav";
+        $("previewBox").innerHTML = '<span style="color:var(--muted)">Audio WAV · ' + (blob.size/1024).toFixed(1) + ' KB</span>';
       } else if (kind === "raw" || (res.headers.get("Content-Disposition") || "").indexOf(".dat") >= 0) {
         const blob = await res.blob();
         extractedBlob = blob;

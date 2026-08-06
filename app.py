@@ -35,7 +35,11 @@ STATIC = Path(__file__).parent
 
 SUPPORTED = {
     "Texture2D", "TextAsset", "Mesh", "Material", "Sprite",
-    "AnimationClip", "AnimatorController", "Avatar",
+    "AnimationClip", "AnimatorController", "Avatar", "AudioClip",
+}
+# Types that crash games if wrong structure is injected
+STRICT_RAW_TYPES = {
+    "Mesh", "AnimationClip", "AnimatorController", "Avatar", "AudioClip",
 }
 RAW_REPLACE_TYPES = SUPPORTED | {
     "MonoBehaviour", "GameObject", "Transform", "SkinnedMeshRenderer",
@@ -201,6 +205,8 @@ def asset_info(obj):
                 extra["size"] = int(tree.get("m_VertexCount") or 0)
             if tname == "AnimationClip":
                 extra["size"] = int(tree.get("m_MuscleClipSize") or tree.get("m_Size") or 0)
+            if tname == "AudioClip":
+                extra["size"] = int(tree.get("m_Size") or 0)
     except Exception:
         pass
     try:
@@ -215,6 +221,16 @@ def asset_info(obj):
                 extra["size"] = len(s.encode("utf-8", errors="replace"))
             elif isinstance(s, (bytes, bytearray)):
                 extra["size"] = len(s)
+        if tname == "AudioClip":
+            try:
+                samples = getattr(d, "samples", None) or {}
+                if samples:
+                    extra["size"] = sum(len(v) for v in samples.values())
+                freq = getattr(d, "m_Frequency", None) or getattr(d, "frequency", None)
+                if freq:
+                    extra["width"] = int(freq)  # reuse width field as Hz in UI
+            except Exception:
+                pass
         if hasattr(obj, "get_raw_data"):
             try:
                 raw = obj.get_raw_data()
@@ -271,11 +287,42 @@ def get_raw(obj) -> bytes:
     raise ValueError("No raw data API on this object")
 
 
-def set_raw(obj, data: bytes):
-    if hasattr(obj, "set_raw_data"):
-        obj.set_raw_data(data)
-        return
-    raise ValueError("No set_raw_data on this object")
+def set_raw(obj, data: bytes, strict: bool = False):
+    if not data or len(data) < 4:
+        raise ValueError("Raw data too small or empty")
+    if not hasattr(obj, "set_raw_data"):
+        raise ValueError("No set_raw_data on this object")
+    old = None
+    try:
+        old = obj.get_raw_data()
+    except Exception:
+        pass
+    # Strict types: reject huge size swings (common crash cause)
+    if strict and old is not None and len(old) > 64:
+        ratio = len(data) / max(len(old), 1)
+        if ratio < 0.25 or ratio > 4.0:
+            raise ValueError(
+                f"Raw size mismatch ({len(old)} -> {len(data)}). "
+                "Use .dat exported from THIS same asset (Export .dat), not another object."
+            )
+    obj.set_raw_data(data)
+    try:
+        af = getattr(obj, "assets_file", None)
+        if af is not None and hasattr(af, "mark_changed"):
+            af.mark_changed()
+    except Exception:
+        pass
+    # Verify object still readable
+    if strict:
+        try:
+            _ = obj.get_raw_data()
+        except Exception as e:
+            if old is not None:
+                try:
+                    obj.set_raw_data(old)
+                except Exception:
+                    pass
+            raise ValueError(f"Replace rejected (object broken after write): {e}")
 
 
 def extract_asset(data: bytes, path_id=None, name=None, type_name_filter=None, as_raw=False):
@@ -291,7 +338,7 @@ def extract_asset(data: bytes, path_id=None, name=None, type_name_filter=None, a
         pass
     if as_raw or tname in ("AnimationClip", "AnimatorController", "Avatar"):
         raw = get_raw(obj)
-        return {"kind": "raw", "name": str(aname), "type": tname, "raw_bytes": raw}
+        return {"kind": "raw", "name": str(aname), "type": tname, "raw_bytes": raw, "path_id": str(getattr(obj, "path_id", ""))}
     if tname in ("Texture2D", "Sprite"):
         d = obj.read()
         img = d.image
@@ -321,13 +368,23 @@ def extract_asset(data: bytes, path_id=None, name=None, type_name_filter=None, a
         obj_txt = d.export(format="obj")
         raw = obj_txt if isinstance(obj_txt, bytes) else str(obj_txt).encode("utf-8")
         return {"kind": "mesh", "name": str(aname), "obj_bytes": raw}
+    if tname == "AudioClip":
+        d = obj.read()
+        samples = getattr(d, "samples", None) or {}
+        if samples:
+            # first sample as wav
+            wav = next(iter(samples.values()))
+            return {"kind": "audio", "name": str(aname), "wav_bytes": wav, "path_id": str(getattr(obj, "path_id", ""))}
+        raw = get_raw(obj)
+        return {"kind": "raw", "name": str(aname), "type": tname, "raw_bytes": raw, "path_id": str(getattr(obj, "path_id", ""))}
     raw = get_raw(obj)
-    return {"kind": "raw", "name": str(aname), "type": tname, "raw_bytes": raw}
+    return {"kind": "raw", "name": str(aname), "type": tname, "raw_bytes": raw, "path_id": str(getattr(obj, "path_id", ""))}
 
 
 def replace_assets(bundle_bytes: bytes, replacements: list) -> tuple:
     env = load_env(bundle_bytes)
     replaced = []
+    errors = []
     by_pid, by_tn, by_n = {}, {}, {}
     for r in replacements:
         if r.get("path_id"):
@@ -356,18 +413,26 @@ def replace_assets(bundle_bytes: bytes, replacements: list) -> tuple:
                 except Exception:
                     continue
             key = str(aname).lower()
-            rep = by_tn.get((tname, key)) or by_n.get(key)
+            # Strict types: only match same type + name (never bare name alone)
+            if tname in STRICT_RAW_TYPES:
+                rep = by_tn.get((tname, key))
+                if rep is None and by_tn.get(("", key)):
+                    # allow type-less only if filename mode is raw and single candidate
+                    rep = by_tn.get(("", key))
+            else:
+                rep = by_tn.get((tname, key)) or by_n.get(key)
         if not rep:
             continue
         raw = rep["data"]
         mode = rep.get("mode") or "auto"
         aname = aname or rep.get("name") or obj_pid
+        is_dat = Path(rep.get("filename") or "").suffix.lower() == ".dat"
         try:
-            if mode == "raw" or (mode == "auto" and Path(rep.get("filename") or "").suffix.lower() == ".dat"):
-                set_raw(obj, raw)
+            if mode == "raw" or (mode == "auto" and is_dat) or tname in STRICT_RAW_TYPES and is_dat:
+                set_raw(obj, raw, strict=tname in STRICT_RAW_TYPES)
                 replaced.append(f"{tname}:{aname}")
                 continue
-            if tname in ("Texture2D", "Sprite") and mode in ("auto", "texture"):
+            if tname in ("Texture2D", "Sprite") and mode in ("auto", "texture") and not is_dat:
                 data_obj = obj.read()
                 img = Image.open(io.BytesIO(raw)).convert("RGBA")
                 if hasattr(data_obj, "set_image"):
@@ -383,7 +448,7 @@ def replace_assets(bundle_bytes: bytes, replacements: list) -> tuple:
                 except Exception:
                     pass
                 replaced.append(f"{tname}:{aname}")
-            elif tname == "TextAsset" and mode in ("auto", "text"):
+            elif tname == "TextAsset" and mode in ("auto", "text") and not is_dat:
                 data_obj = obj.read()
                 try:
                     data_obj.m_Script = raw.decode("utf-8")
@@ -391,20 +456,33 @@ def replace_assets(bundle_bytes: bytes, replacements: list) -> tuple:
                     data_obj.m_Script = raw
                 data_obj.save()
                 replaced.append(f"{tname}:{aname}")
-            elif tname in ("Mesh", "AnimationClip", "AnimatorController", "Avatar") or mode == "raw":
-                set_raw(obj, raw)
+            elif tname == "AudioClip":
+                # Prefer full object .dat; wav alone cannot rebuild Unity AudioClip safely
+                if is_dat or mode == "raw":
+                    set_raw(obj, raw, strict=True)
+                    replaced.append(f"{tname}:{aname}")
+                else:
+                    errors.append(f"{aname}: AudioClip needs .dat (Export .dat first), not only wav/mp3")
+            elif tname in STRICT_RAW_TYPES:
+                set_raw(obj, raw, strict=True)
                 replaced.append(f"{tname}:{aname}")
             else:
-                set_raw(obj, raw)
+                set_raw(obj, raw, strict=False)
                 replaced.append(f"{tname}:{aname}")
-        except Exception:
+        except Exception as e:
             log.exception("replace failed %s", aname)
+            errors.append(f"{aname}: {e}")
 
     if not replaced:
-        raise ValueError("No matching assets. Check names/path_id/.dat")
+        msg = "No matching assets. Check names/path_id/.dat"
+        if errors:
+            msg += " | " + "; ".join(errors[:3])
+        raise ValueError(msg)
     out = save_env_bytes(env)
     if len(out) < max(1024, int(len(bundle_bytes) * 0.05)):
         raise RuntimeError(f"Save too small ({len(out)} vs {len(bundle_bytes)})")
+    if errors:
+        log.warning("partial replace errors: %s", errors)
     return out, replaced
 
 
@@ -449,15 +527,30 @@ def export_models_zip(data: bytes) -> bytes:
                     name = (info or {}).get("name") or f"anim_{obj.path_id}"
                     safe = re.sub(r"[^\w.\-]+", "_", str(name))[:100] or "anim"
                     put(f"animations/{safe}.{tname}.dat", get_raw(obj))
+                elif tname == "AudioClip":
+                    info = asset_info(obj)
+                    name = (info or {}).get("name") or f"audio_{obj.path_id}"
+                    safe = re.sub(r"[^\w.\-]+", "_", str(name))[:100] or "audio"
+                    put(f"raw/{safe}.AudioClip.dat", get_raw(obj))
+                    try:
+                        d = obj.read()
+                        samples = getattr(d, "samples", None) or {}
+                        for sn, sdata in samples.items():
+                            ssafe = re.sub(r"[^\w.\-]+", "_", str(sn))[:80] or safe
+                            put(f"audio/{ssafe}.wav", sdata)
+                    except Exception:
+                        pass
             except Exception:
                 log.exception("export skip %s", tname)
         zf.writestr(
             "README.txt",
-            "meshes/*.obj = Mesh (preview)\n"
-            "raw/*.Mesh.dat = Mesh raw (for replace)\n"
-            "textures/*.png = Texture2D / Sprite\n"
-            "animations/*.dat = AnimationClip / related raw\n"
-            "To replace: put files in a zip and use Replace everything.\n"
+            "SAFE REPLACE RULES (avoids game crashes):\n"
+            "- Mesh / Animation / Audio: ONLY replace with .dat exported from THE SAME asset\n"
+            "  (use Export .dat on that asset). Do not swap mesh A with mesh B data.\n"
+            "- textures/*.png = Texture2D (safe)\n"
+            "- meshes/*.obj = preview only (cannot import OBJ; use raw/*.Mesh.dat)\n"
+            "- animations/*.dat = AnimationClip raw\n"
+            "- audio/*.wav = preview; replace AudioClip with raw/*.AudioClip.dat\n"
             f"Exported {count} files.\n",
         )
     if count == 0:
@@ -650,6 +743,16 @@ async def api_extract(request):
                 "Content-Type": "text/plain",
                 "Content-Disposition": f'attachment; filename="{sanitize(result["name"])}.obj"',
                 "X-Asset-Kind": "mesh",
+                "X-Asset-Name": result["name"],
+            },
+        )
+    if result["kind"] == "audio":
+        return web.Response(
+            body=result["wav_bytes"],
+            headers={
+                "Content-Type": "audio/wav",
+                "Content-Disposition": f'attachment; filename="{sanitize(result["name"])}.wav"',
+                "X-Asset-Kind": "audio",
                 "X-Asset-Name": result["name"],
             },
         )
