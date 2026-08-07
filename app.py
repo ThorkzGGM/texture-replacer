@@ -39,8 +39,9 @@ SUPPORTED = {
 }
 # Types that crash games if wrong structure is injected
 STRICT_RAW_TYPES = {
-    "Mesh", "AnimationClip", "AnimatorController", "Avatar", "AudioClip",
+    "Mesh", "AnimationClip", "AnimatorController", "Avatar",
 }
+# AudioClip can use wav/mp3 via typetree; still allow .dat
 RAW_REPLACE_TYPES = SUPPORTED | {
     "MonoBehaviour", "GameObject", "Transform", "SkinnedMeshRenderer",
     "MeshRenderer", "MeshFilter", "Animator",
@@ -287,6 +288,110 @@ def get_raw(obj) -> bytes:
     raise ValueError("No raw data API on this object")
 
 
+def parse_wav(data: bytes) -> dict:
+    """Minimal WAV parser (PCM). Returns channels, rate, bits, pcm bytes."""
+    if len(data) < 44 or data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
+        raise ValueError("Not a WAV file")
+    # find fmt and data chunks
+    pos = 12
+    channels = rate = bits = None
+    pcm = None
+    while pos + 8 <= len(data):
+        chunk = data[pos:pos + 4]
+        size = int.from_bytes(data[pos + 4:pos + 8], "little")
+        body = data[pos + 8:pos + 8 + size]
+        if chunk == b"fmt " and size >= 16:
+            channels = int.from_bytes(body[2:4], "little")
+            rate = int.from_bytes(body[4:8], "little")
+            bits = int.from_bytes(body[14:16], "little")
+        elif chunk == b"data":
+            pcm = body
+        pos += 8 + size
+        if size % 2:
+            pos += 1
+    if not pcm or not channels or not rate:
+        raise ValueError("Invalid WAV (need PCM fmt+data)")
+    return {"channels": channels, "rate": rate, "bits": bits or 16, "pcm": pcm}
+
+
+def replace_audioclip_obj(obj, file_bytes: bytes, filename: str = "") -> None:
+    """Replace AudioClip audio from wav/mp3/ogg/m4a when possible (no .dat required)."""
+    ext = Path(filename or "").suffix.lower()
+    is_wav = ext == ".wav" or (file_bytes[:4] == b"RIFF" and b"WAVE" in file_bytes[:16])
+    is_dat = ext == ".dat"
+
+    if is_dat:
+        set_raw(obj, file_bytes, strict=True)
+        return
+
+    # Prefer typetree patch for common inline clips
+    tree = None
+    try:
+        tree = obj.read_typetree()
+    except Exception:
+        tree = None
+
+    if is_wav:
+        info = parse_wav(file_bytes)
+        pcm = info["pcm"]
+        channels, rate, bits = info["channels"], info["rate"], info["bits"]
+        duration = len(pcm) / max(channels * (bits // 8) * rate, 1)
+        if tree is not None and isinstance(tree, dict):
+            # Common fields across Unity versions
+            for k, v in (
+                ("m_Frequency", rate),
+                ("m_SampleRate", rate),
+                ("m_Channels", channels),
+                ("m_BitsPerSample", bits),
+                ("m_Length", float(duration)),
+            ):
+                if k in tree or k.startswith("m_"):
+                    tree[k] = v
+            # Uncompressed PCM often expected as list of ints (bytes)
+            if "m_AudioData" in tree:
+                tree["m_AudioData"] = list(pcm)
+            # Compression: PCM = 0 in many versions
+            for ck in ("m_CompressionFormat", "m_Format"):
+                if ck in tree:
+                    tree[ck] = 0
+            try:
+                obj.save_typetree(tree)
+                return
+            except Exception:
+                log.exception("audioclip save_typetree failed, trying raw-ish fallback")
+        # Fallback: keep container, may still crash if structure wrong
+        raise ValueError(
+            "Could not write WAV into this AudioClip via typetree. "
+            "Export .dat for this clip and replace with .dat, or try another bundle."
+        )
+
+    # Compressed formats: store file bytes as m_AudioData when field exists
+    fmt_map = {
+        ".mp3": 1,   # MPEG often
+        ".ogg": 1,
+        ".oga": 1,
+        ".m4a": 1,
+        ".aac": 1,
+        ".mp4": 1,   # user may pick mp4 as audio container
+    }
+    if tree is not None and isinstance(tree, dict) and "m_AudioData" in tree:
+        tree["m_AudioData"] = list(file_bytes)
+        for ck in ("m_CompressionFormat", "m_Format"):
+            if ck in tree and ext in fmt_map:
+                tree[ck] = fmt_map[ext]
+        try:
+            # length unknown without decode
+            obj.save_typetree(tree)
+            return
+        except Exception as e:
+            raise ValueError(f"Audio replace failed: {e}") from e
+
+    raise ValueError(
+        "This AudioClip cannot take wav/mp3 directly (streamed or locked). "
+        "Use Export .dat then replace with that .dat only."
+    )
+
+
 def set_raw(obj, data: bytes, strict: bool = False):
     if not data or len(data) < 4:
         raise ValueError("Raw data too small or empty")
@@ -323,6 +428,127 @@ def set_raw(obj, data: bytes, strict: bool = False):
                 except Exception:
                     pass
             raise ValueError(f"Replace rejected (object broken after write): {e}")
+
+
+def _vec3(v):
+    if hasattr(v, "X"):
+        return float(v.X), float(v.Y), float(v.Z)
+    if hasattr(v, "x"):
+        return float(v.x), float(v.y), float(v.z)
+    if isinstance(v, (list, tuple)) and len(v) >= 3:
+        return float(v[0]), float(v[1]), float(v[2])
+    return 0.0, 0.0, 0.0
+
+
+def _vec2(v):
+    if hasattr(v, "X"):
+        return float(v.X), float(v.Y)
+    if hasattr(v, "x"):
+        return float(v.x), float(v.y)
+    if isinstance(v, (list, tuple)) and len(v) >= 2:
+        return float(v[0]), float(v[1])
+    return 0.0, 0.0
+
+
+def export_mesh_prisma_obj(mesh, name: str = "mesh"):
+    """
+    Wavefront OBJ + MTL for Prisma3D (and Blender).
+    Triangles, UV V-flipped, simple MTL.
+    Returns (obj_text, mtl_text).
+    """
+    safe = re.sub(r"[^\w.\-]+", "_", str(name))[:80] or "mesh"
+    verts = list(getattr(mesh, "vertices", None) or [])
+    norms = list(getattr(mesh, "normals", None) or [])
+    uvs = list(getattr(mesh, "uv", None) or [])
+    if not uvs:
+        try:
+            uvs = list(getattr(mesh, "uvs", None) or [])
+        except Exception:
+            uvs = []
+
+    tris = getattr(mesh, "triangles", None)
+    faces = []
+    if tris is not None:
+        try:
+            if len(tris) and isinstance(tris[0], (list, tuple)):
+                for sub in tris:
+                    flat = list(sub)
+                    for i in range(0, len(flat) - 2, 3):
+                        faces.append((int(flat[i]), int(flat[i + 1]), int(flat[i + 2])))
+            else:
+                flat = list(tris)
+                for i in range(0, len(flat) - 2, 3):
+                    faces.append((int(flat[i]), int(flat[i + 1]), int(flat[i + 2])))
+        except Exception:
+            faces = []
+
+    if not verts or not faces:
+        try:
+            raw_export = mesh.export()
+            if isinstance(raw_export, bytes):
+                raw_export = raw_export.decode("utf-8", errors="replace")
+            lines = [
+                "# Prisma3D compatible OBJ",
+                f"# Source: Unity mesh {safe}",
+                f"mtllib {safe}.mtl",
+                f"o {safe}",
+                f"g {safe}",
+            ]
+            body = str(raw_export).replace("\r\n", "\n").replace("\r", "\n")
+            for line in body.split("\n"):
+                s = line.strip()
+                if not s or s.startswith("mtllib"):
+                    continue
+                lines.append(line.rstrip())
+            obj_text = "\n".join(lines) + "\n"
+        except Exception as e:
+            raise ValueError(f"Mesh export failed: {e}") from e
+    else:
+        lines = [
+            "# Prisma3D compatible OBJ (Wavefront)",
+            f"# vertices={len(verts)} faces={len(faces)}",
+            f"mtllib {safe}.mtl",
+            f"o {safe}",
+            f"g {safe}",
+            f"usemtl {safe}",
+            "s 1",
+        ]
+        for v in verts:
+            x, y, z = _vec3(v)
+            lines.append(f"v {x:.6f} {y:.6f} {z:.6f}")
+        has_uv = bool(uvs)
+        has_n = bool(norms) and len(norms) == len(verts)
+        if has_uv:
+            for uv in uvs:
+                u, vv = _vec2(uv)
+                lines.append(f"vt {u:.6f} {1.0 - vv:.6f}")
+        if has_n:
+            for n in norms:
+                x, y, z = _vec3(n)
+                lines.append(f"vn {x:.6f} {y:.6f} {z:.6f}")
+        for a, b, c in faces:
+            ia, ib, ic = a + 1, b + 1, c + 1
+            if has_uv and has_n:
+                lines.append(f"f {ia}/{ia}/{ia} {ib}/{ib}/{ib} {ic}/{ic}/{ic}")
+            elif has_uv:
+                lines.append(f"f {ia}/{ia} {ib}/{ib} {ic}/{ic}")
+            elif has_n:
+                lines.append(f"f {ia}//{ia} {ib}//{ib} {ic}//{ic}")
+            else:
+                lines.append(f"f {ia} {ib} {ic}")
+        obj_text = "\n".join(lines) + "\n"
+
+    mtl_text = (
+        f"# Prisma3D material for {safe}\n"
+        f"newmtl {safe}\n"
+        f"Ka 1.000 1.000 1.000\n"
+        f"Kd 0.850 0.850 0.850\n"
+        f"Ks 0.150 0.150 0.150\n"
+        f"Ns 40.0\n"
+        f"d 1.0\n"
+        f"illum 2\n"
+    )
+    return obj_text, mtl_text
 
 
 def extract_asset(data: bytes, path_id=None, name=None, type_name_filter=None, as_raw=False):
@@ -365,9 +591,13 @@ def extract_asset(data: bytes, path_id=None, name=None, type_name_filter=None, a
         return {"kind": "text", "name": str(aname), "text": text, "raw_bytes": raw, "is_binary": text is None}
     if tname == "Mesh":
         d = obj.read()
-        obj_txt = d.export(format="obj")
-        raw = obj_txt if isinstance(obj_txt, bytes) else str(obj_txt).encode("utf-8")
-        return {"kind": "mesh", "name": str(aname), "obj_bytes": raw}
+        obj_txt, mtl_txt = export_mesh_prisma_obj(d, str(aname))
+        return {
+            "kind": "mesh",
+            "name": str(aname),
+            "obj_bytes": obj_txt.encode("utf-8"),
+            "mtl_bytes": mtl_txt.encode("utf-8"),
+        }
     if tname == "AudioClip":
         d = obj.read()
         samples = getattr(d, "samples", None) or {}
@@ -457,13 +687,16 @@ def replace_assets(bundle_bytes: bytes, replacements: list) -> tuple:
                 data_obj.save()
                 replaced.append(f"{tname}:{aname}")
             elif tname == "AudioClip":
-                # Prefer full object .dat; wav alone cannot rebuild Unity AudioClip safely
-                if is_dat or mode == "raw":
-                    set_raw(obj, raw, strict=True)
+                try:
+                    replace_audioclip_obj(obj, raw, rep.get("filename") or "")
                     replaced.append(f"{tname}:{aname}")
-                else:
-                    errors.append(f"{aname}: AudioClip needs .dat (Export .dat first), not only wav/mp3")
+                except Exception as e:
+                    errors.append(f"{aname}: {e}")
             elif tname in STRICT_RAW_TYPES:
+                # Mesh / Animation / Avatar: .dat only
+                if not is_dat and mode != "raw":
+                    errors.append(f"{aname}: {tname} only accepts .dat (Export .dat from same asset)")
+                    continue
                 set_raw(obj, raw, strict=True)
                 replaced.append(f"{tname}:{aname}")
             else:
@@ -512,8 +745,12 @@ def export_models_zip(data: bytes) -> bytes:
                     d = obj.read()
                     name = getattr(d, "m_Name", None) or f"mesh_{obj.path_id}"
                     safe = re.sub(r"[^\w.\-]+", "_", str(name))[:100] or "mesh"
-                    obj_data = d.export(format="obj")
-                    put(f"meshes/{safe}.obj", obj_data if isinstance(obj_data, bytes) else str(obj_data).encode("utf-8"))
+                    obj_txt, mtl_txt = export_mesh_prisma_obj(d, str(name))
+                    # Prisma3D-friendly folder: import the .obj (keep .mtl beside it)
+                    put(f"prisma3d/{safe}/{safe}.obj", obj_txt.encode("utf-8"))
+                    put(f"prisma3d/{safe}/{safe}.mtl", mtl_txt.encode("utf-8"))
+                    put(f"meshes/{safe}.obj", obj_txt.encode("utf-8"))
+                    put(f"meshes/{safe}.mtl", mtl_txt.encode("utf-8"))
                     put(f"raw/{safe}.Mesh.dat", get_raw(obj))
                 elif tname in ("Texture2D", "Sprite"):
                     d = obj.read()
@@ -544,13 +781,14 @@ def export_models_zip(data: bytes) -> bytes:
                 log.exception("export skip %s", tname)
         zf.writestr(
             "README.txt",
-            "SAFE REPLACE RULES (avoids game crashes):\n"
-            "- Mesh / Animation / Audio: ONLY replace with .dat exported from THE SAME asset\n"
-            "  (use Export .dat on that asset). Do not swap mesh A with mesh B data.\n"
-            "- textures/*.png = Texture2D (safe)\n"
-            "- meshes/*.obj = preview only (cannot import OBJ; use raw/*.Mesh.dat)\n"
-            "- animations/*.dat = AnimationClip raw\n"
-            "- audio/*.wav = preview; replace AudioClip with raw/*.AudioClip.dat\n"
+            "PRISMA3D MESHES:\n"
+            "  prisma3d/Name/Name.obj  +  Name.mtl\n"
+            "  Copy the folder to your phone and Import OBJ in Prisma3D.\n"
+            "  Keep .obj and .mtl in the same folder.\n\n"
+            "SAFE REPLACE INTO GAME:\n"
+            "- Mesh / Animation / Avatar: only .dat from the SAME asset (Export .dat)\n"
+            "- textures/*.png = Texture2D\n"
+            "- audio/*.wav = preview; AudioClip replace supports wav/mp3 or .dat\n"
             f"Exported {count} files.\n",
         )
     if count == 0:
@@ -737,15 +975,18 @@ async def api_extract(request):
             },
         )
     if result["kind"] == "mesh":
-        return web.Response(
-            body=result["obj_bytes"],
-            headers={
-                "Content-Type": "text/plain",
-                "Content-Disposition": f'attachment; filename="{sanitize(result["name"])}.obj"',
-                "X-Asset-Kind": "mesh",
-                "X-Asset-Name": result["name"],
-            },
-        )
+        # OBJ for preview + Prisma3D import (MTL available via bulk Download assets)
+        safe = sanitize(result["name"]) or "mesh"
+        headers = {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Disposition": f'attachment; filename="{safe}.obj"',
+            "X-Asset-Kind": "mesh",
+            "X-Asset-Name": result["name"],
+            "X-Prisma3D": "1",
+        }
+        if result.get("mtl_bytes"):
+            headers["X-Mtl-Base64"] = base64.b64encode(result["mtl_bytes"]).decode("ascii")
+        return web.Response(body=result["obj_bytes"], headers=headers)
     if result["kind"] == "audio":
         return web.Response(
             body=result["wav_bytes"],
@@ -882,6 +1123,8 @@ async def api_bulk_replace(request):
             replacements.append({"name": stem, "type": "Texture2D", "data": data, "mode": "texture", "filename": fname})
         elif ext in TEXT_EXT or ext == "":
             replacements.append({"name": stem, "type": "TextAsset", "data": data, "mode": "text", "filename": fname})
+        elif ext in {".wav", ".mp3", ".ogg", ".m4a", ".aac", ".mp4"}:
+            replacements.append({"name": stem, "type": "AudioClip", "data": data, "mode": "auto", "filename": fname})
         else:
             extras.append({"name": fname, "reason": "unsupported"})
     just = []
